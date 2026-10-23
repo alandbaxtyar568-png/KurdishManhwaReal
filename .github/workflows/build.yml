@@ -264,8 +264,12 @@ jobs:
           import android.graphics.Bitmap
           import android.graphics.Color
           import android.graphics.PixelFormat
+          import android.graphics.Rect
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
           import android.hardware.display.DisplayManager
           import android.hardware.display.VirtualDisplay
+          import android.media.Image
           import android.media.ImageReader
           import android.media.projection.MediaProjection
           import android.media.projection.MediaProjectionManager
@@ -273,11 +277,14 @@ jobs:
           import android.os.Handler
           import android.os.IBinder
           import android.os.Looper
+          import android.os.SystemClock
           import android.util.DisplayMetrics
           import android.util.Log
+          import android.util.TypedValue
           import android.view.Gravity
           import android.view.View
           import android.view.WindowManager
+          import android.widget.FrameLayout
           import android.widget.TextView
           import com.google.mlkit.vision.common.InputImage
           import com.google.mlkit.vision.text.TextRecognition
@@ -286,31 +293,57 @@ jobs:
           import java.net.HttpURLConnection
           import java.net.URL
           import java.net.URLEncoder
+          import java.util.concurrent.Callable
+          import java.util.concurrent.ConcurrentHashMap
           import java.util.concurrent.Executors
+          import java.util.concurrent.TimeUnit
+          import kotlin.math.abs
 
           class KurdishRealTimeTranslatorService : Service() {
 
-              private val handler = Handler(Looper.getMainLooper())
-              private val checkInterval = 350L
-              private val ocrHeightFraction = 0.75f // تەنها ٧٥٪ی سەرەوەی شاشە دەخوێنرێتەوە (overlay لە خوارەوەیە)
+              private class Block(val text: String, val rect: Rect, val bg: Int)
 
-              private var lastProcessedText = ""
+              private val handler = Handler(Looper.getMainLooper())
+              private val checkInterval = 250L
+
+              // ناوچەی سەرەوە (ستاتۆس بار + ئەدرێس بار) و خوارەوە کە وەرناگێڕدرێت
+              private val topIgnore = 0.12f
+              private val bottomIgnore = 0.03f
+
+              // ئەگەر زیاتر لەم ڕێژەیە لە وێنەکە گۆڕا، واتە سکڕۆڵ دەکرێت
+              private val changeThreshold = 0.006f
+
+              private var screenW = 0
+              private var screenH = 0
               private var mediaProjection: MediaProjection? = null
               private var virtualDisplay: VirtualDisplay? = null
               private var imageReader: ImageReader? = null
               private var windowManager: WindowManager? = null
-              private var overlayTextView: TextView? = null
+              private var container: FrameLayout? = null
 
               private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
-              private val executor = Executors.newSingleThreadExecutor()
+              private val orchestrator = Executors.newSingleThreadExecutor()
+              private val workers = Executors.newFixedThreadPool(4)
+              private val cache = ConcurrentHashMap<String, String>()
 
-              @Volatile private var isProcessing = false
-              @Volatile private var requestCounter = 0
+              private var lastBitmap: Bitmap? = null
+              private var prevSig: IntArray? = null
+              private var overlayVisible = false
+              private var needsTranslate = true
+              private var needFreshFrame = false
+              private var suppressUntil = 0L
+              private var isProcessing = false
+              private var generation = 0
               private var started = false
 
               private val runnableCode = object : Runnable {
                   override fun run() {
-                      captureAndProcess()
+                      if (!started) return
+                      try {
+                          captureAndProcess()
+                      } catch (e: Exception) {
+                          Log.e(TAG, "هەڵە: ${e.message}")
+                      }
                       handler.postDelayed(this, checkInterval)
                   }
               }
@@ -325,7 +358,6 @@ jobs:
                       .setSmallIcon(android.R.drawable.ic_menu_view)
                       .build()
 
-                  // دەبێت پێش getMediaProjection بانگ بکرێت (ئەندرۆید ١٤)
                   if (Build.VERSION.SDK_INT >= 29) {
                       startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
                   } else {
@@ -348,7 +380,6 @@ jobs:
                   try {
                       val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                       mediaProjection = mpManager.getMediaProjection(resultCode, dataIntent)
-                      // ئەندرۆید ١٤: دەبێت callback تۆمار بکرێت پێش createVirtualDisplay
                       mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                           override fun onStop() {
                               handler.post { stopSelf() }
@@ -367,25 +398,23 @@ jobs:
                   return START_NOT_STICKY
               }
 
-              private fun screenSize(): Triple<Int, Int, Int> {
+              private fun setupScreenCapture() {
                   val wm = getSystemService(WINDOW_SERVICE) as WindowManager
                   val dpi = resources.displayMetrics.densityDpi
-                  return if (Build.VERSION.SDK_INT >= 30) {
+                  if (Build.VERSION.SDK_INT >= 30) {
                       val b = wm.maximumWindowMetrics.bounds
-                      Triple(b.width(), b.height(), dpi)
+                      screenW = b.width()
+                      screenH = b.height()
                   } else {
                       val m = DisplayMetrics()
                       @Suppress("DEPRECATION")
                       wm.defaultDisplay.getRealMetrics(m)
-                      Triple(m.widthPixels, m.heightPixels, dpi)
+                      screenW = m.widthPixels
+                      screenH = m.heightPixels
                   }
-              }
-
-              private fun setupScreenCapture() {
-                  val (w, h, dpi) = screenSize()
-                  imageReader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+                  imageReader = ImageReader.newInstance(screenW, screenH, PixelFormat.RGBA_8888, 2)
                   virtualDisplay = mediaProjection?.createVirtualDisplay(
-                      "ScreenCapture", w, h, dpi,
+                      "ScreenCapture", screenW, screenH, dpi,
                       DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                       imageReader?.surface, null, null
                   )
@@ -394,35 +423,33 @@ jobs:
               private fun setupOverlayWindow() {
                   val wm = getSystemService(WINDOW_SERVICE) as WindowManager
                   windowManager = wm
-
-                  overlayTextView = TextView(this).apply {
-                      textSize = 16f
-                      setTextColor(Color.YELLOW)
-                      setBackgroundColor(Color.parseColor("#CC000000"))
-                      setPadding(24, 24, 24, 24)
-                      gravity = Gravity.CENTER
-                      maxLines = 6
-                      textDirection = View.TEXT_DIRECTION_RTL
-                  }
+                  val c = FrameLayout(this)
+                  container = c
 
                   val params = WindowManager.LayoutParams(
                       WindowManager.LayoutParams.MATCH_PARENT,
-                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.MATCH_PARENT,
                       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                          WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                          WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                          WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                       PixelFormat.TRANSLUCENT
                   ).apply {
-                      gravity = Gravity.BOTTOM
+                      gravity = Gravity.TOP or Gravity.START
+                      if (Build.VERSION.SDK_INT >= 30) {
+                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                      } else if (Build.VERSION.SDK_INT >= 28) {
+                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                      }
                   }
-                  wm.addView(overlayTextView, params)
+                  wm.addView(c, params)
               }
 
-              private fun captureAndProcess() {
-                  if (isProcessing) return
-                  val reader = imageReader ?: return
-                  val image = reader.acquireLatestImage() ?: return
+              // ---------- وێنەگرتن و دۆزینەوەی سکڕۆڵ ----------
 
-                  val bitmap: Bitmap = try {
+              private fun toBitmap(image: Image): Bitmap? {
+                  return try {
                       val plane = image.planes[0]
                       val pixelStride = plane.pixelStride
                       val rowPadding = plane.rowStride - pixelStride * image.width
@@ -430,62 +457,230 @@ jobs:
                           image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888
                       )
                       full.copyPixelsFromBuffer(plane.buffer)
-                      val cropped = Bitmap.createBitmap(full, 0, 0, image.width, (image.height * ocrHeightFraction).toInt())
-                      if (cropped !== full) full.recycle()
-                      cropped
+                      if (rowPadding == 0) {
+                          full
+                      } else {
+                          val cropped = Bitmap.createBitmap(full, 0, 0, image.width, image.height)
+                          full.recycle()
+                          cropped
+                      }
                   } catch (e: Exception) {
                       Log.e(TAG, "هەڵە لە وێنەگرتن: ${e.message}")
-                      return
+                      null
                   } finally {
                       image.close()
                   }
+              }
 
-                  isProcessing = true
-                  recognizer.process(InputImage.fromBitmap(bitmap, 0))
-                      .addOnSuccessListener { visionText ->
-                          val currentText = visionText.text.replace("\n", " ").trim()
-                          if (currentText.length >= 3 && currentText != lastProcessedText) {
-                              lastProcessedText = currentText
-                              translateToKurdish(currentText)
+              private fun signature(bmp: Bitmap): IntArray {
+                  val small = Bitmap.createScaledBitmap(bmp, SIG_W, SIG_H, true)
+                  val px = IntArray(SIG_W * SIG_H)
+                  small.getPixels(px, 0, SIG_W, 0, 0, SIG_W, SIG_H)
+                  if (small !== bmp) small.recycle()
+                  for (i in px.indices) {
+                      val p = px[i]
+                      px[i] = (Color.red(p) * 3 + Color.green(p) * 6 + Color.blue(p)) / 10
+                  }
+                  return px
+              }
+
+              private fun changedFraction(a: IntArray, b: IntArray): Float {
+                  var n = 0
+                  for (i in a.indices) {
+                      if (abs(a[i] - b[i]) > 30) n++
+                  }
+                  return n.toFloat() / a.size
+              }
+
+              private fun captureAndProcess() {
+                  val reader = imageReader ?: return
+                  val image = reader.acquireLatestImage()
+                  var newFrame = false
+                  if (image != null) {
+                      val fresh = toBitmap(image)
+                      if (fresh != null) {
+                          lastBitmap?.recycle()
+                          lastBitmap = fresh
+                          newFrame = true
+                      }
+                  }
+                  // ئەگەر شاشە نەگۆڕابێت وێنەی نوێ نایەت، بۆیە دوایین وێنە بەکاردێنین
+                  val bmp = lastBitmap ?: return
+
+                  if (newFrame) {
+                      val sig = signature(bmp)
+                      val prev = prevSig
+                      prevSig = sig
+                      if (!overlayVisible) needFreshFrame = false
+                      if (SystemClock.uptimeMillis() < suppressUntil) return
+
+                      if (prev == null) {
+                          needsTranslate = true
+                      } else if (changedFraction(prev, sig) > changeThreshold) {
+                          // سکڕۆڵ دەکرێت: وەرگێڕانەکە بشارەوە
+                          generation++
+                          needsTranslate = true
+                          if (overlayVisible) {
+                              hideOverlay()
+                              needFreshFrame = true
                           }
+                          return
+                      }
+                  }
+
+                  // شاشە وەستاوە و ئینگلیزییەکە دیارە: OCR بکە
+                  if (needsTranslate && !overlayVisible && !needFreshFrame && !isProcessing) {
+                      needsTranslate = false
+                      lastBitmap = null
+                      runOcr(bmp, generation)
+                  }
+              }
+
+              // ---------- OCR ----------
+
+              private fun lum(c: Int): Int = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
+
+              private fun sampleBg(bmp: Bitmap, r: Rect): Int {
+                  val cx = (r.left + r.right) / 2
+                  val cy = (r.top + r.bottom) / 2
+                  val m = 6
+                  val pts = listOf(
+                      (r.left - m) to (r.top - m), cx to (r.top - m), (r.right + m) to (r.top - m),
+                      (r.left - m) to cy, (r.right + m) to cy,
+                      (r.left - m) to (r.bottom + m), cx to (r.bottom + m), (r.right + m) to (r.bottom + m)
+                  )
+                  val cols = ArrayList<Int>()
+                  for ((x, y) in pts) {
+                      if (x in 0 until bmp.width && y in 0 until bmp.height) cols.add(bmp.getPixel(x, y))
+                  }
+                  if (cols.isEmpty()) return Color.WHITE
+                  cols.sortBy { lum(it) }
+                  return cols[cols.size / 2]
+              }
+
+              private fun runOcr(bmp: Bitmap, gen: Int) {
+                  isProcessing = true
+                  val h = bmp.height
+                  recognizer.process(InputImage.fromBitmap(bmp, 0))
+                      .addOnSuccessListener { visionText ->
+                          if (!started || gen != generation) return@addOnSuccessListener
+                          val blocks = ArrayList<Block>()
+                          for (b in visionText.textBlocks) {
+                              val box = b.boundingBox ?: continue
+                              val t = b.text.replace("\n", " ").trim()
+                              if (t.count { it.isLetter() } < 2) continue
+                              if (box.top < h * topIgnore || box.bottom > h * (1f - bottomIgnore)) continue
+                              blocks.add(Block(t, Rect(box), sampleBg(bmp, box)))
+                              if (blocks.size >= 12) break
+                          }
+                          if (blocks.isNotEmpty()) translateBlocks(blocks, gen)
                       }
                       .addOnFailureListener { e -> Log.e(TAG, "OCR هەڵە: ${e.message}") }
                       .addOnCompleteListener {
                           isProcessing = false
-                          bitmap.recycle()
+                          bmp.recycle()
                       }
               }
 
-              private fun translateToKurdish(text: String) {
-                  val myId = ++requestCounter
-                  executor.execute {
-                      var connection: HttpURLConnection? = null
+              // ---------- وەرگێڕان ----------
+
+              private fun translate(text: String): String? {
+                  cache[text]?.let { return it }
+                  var conn: HttpURLConnection? = null
+                  return try {
+                      val urlString = "https://translate.googleapis.com/translate_a/single" +
+                          "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text.take(500), "UTF-8")
+                      conn = URL(urlString).openConnection() as HttpURLConnection
+                      conn.requestMethod = "GET"
+                      conn.connectTimeout = 4000
+                      conn.readTimeout = 4000
+                      conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                      val response = conn.inputStream.bufferedReader().use { it.readText() }
+                      val sub = JSONArray(response).getJSONArray(0)
+                      val sb = StringBuilder()
+                      for (i in 0 until sub.length()) {
+                          sb.append(sub.getJSONArray(i).optString(0, ""))
+                      }
+                      val out = sb.toString().trim()
+                      if (out.isNotEmpty()) cache[text] = out
+                      if (out.isEmpty()) null else out
+                  } catch (e: Exception) {
+                      Log.e(TAG, "هەڵە لە وەرگێڕان: ${e.message}")
+                      null
+                  } finally {
+                      conn?.disconnect()
+                  }
+              }
+
+              private fun translateBlocks(blocks: List<Block>, gen: Int) {
+                  if (orchestrator.isShutdown) return
+                  orchestrator.execute {
                       try {
-                          val urlString = "https://translate.googleapis.com/translate_a/single" +
-                              "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text.take(1500), "UTF-8")
-                          connection = URL(urlString).openConnection() as HttpURLConnection
-                          connection.requestMethod = "GET"
-                          connection.connectTimeout = 5000
-                          connection.readTimeout = 5000
-                          connection.setRequestProperty("User-Agent", "Mozilla/5.0")
-
-                          val response = connection.inputStream.bufferedReader().use { it.readText() }
-                          val subArray = JSONArray(response).getJSONArray(0)
-                          val result = StringBuilder()
-                          for (i in 0 until subArray.length()) {
-                              result.append(subArray.getJSONArray(i).optString(0, ""))
+                          // هەموو بلۆکەکان پێکەوە (پاڕەلێل) وەردەگێڕدرێن بۆ خێرایی
+                          val futures = blocks.map { b -> workers.submit(Callable<String?> { translate(b.text) }) }
+                          val results = futures.map { f ->
+                              try { f.get(6, TimeUnit.SECONDS) } catch (e: Exception) { null }
                           }
-
-                          // تەنها دوایین داواکاری نیشان بدە
-                          if (myId == requestCounter) {
-                              handler.post { overlayTextView?.text = result.toString() }
+                          handler.post {
+                              if (started && gen == generation && !overlayVisible) showBlocks(blocks, results)
                           }
                       } catch (e: Exception) {
-                          Log.e(TAG, "هەڵە لە وەرگێڕان: ${e.message}")
-                      } finally {
-                          connection?.disconnect()
+                          Log.e(TAG, "هەڵە: ${e.message}")
                       }
                   }
+              }
+
+              // ---------- نیشاندان لەجێی ئینگلیزییەکە ----------
+
+              private fun showBlocks(blocks: List<Block>, results: List<String?>) {
+                  val c = container ?: return
+                  c.removeAllViews()
+                  val loc = IntArray(2)
+                  c.getLocationOnScreen(loc)
+                  var shown = 0
+
+                  for (i in blocks.indices) {
+                      val tr = results[i] ?: continue
+                      val b = blocks[i]
+                      val padX = (b.rect.width() * 0.08f).toInt() + 6
+                      val padY = (b.rect.height() * 0.06f).toInt() + 4
+                      val left = (b.rect.left - padX).coerceAtLeast(0)
+                      val top = (b.rect.top - padY).coerceAtLeast(0)
+                      val right = (b.rect.right + padX).coerceAtMost(screenW)
+                      val bottom = (b.rect.bottom + padY).coerceAtMost(screenH)
+                      if (right <= left || bottom <= top) continue
+
+                      val tv = TextView(this)
+                      tv.setAutoSizeTextTypeUniformWithConfiguration(6, 30, 1, TypedValue.COMPLEX_UNIT_SP)
+                      tv.text = tr
+                      tv.setTextColor(if (lum(b.bg) > 150) Color.BLACK else Color.WHITE)
+                      tv.typeface = Typeface.DEFAULT_BOLD
+                      tv.gravity = Gravity.CENTER
+                      tv.textDirection = View.TEXT_DIRECTION_RTL
+                      tv.includeFontPadding = false
+                      tv.setPadding(4, 2, 4, 2)
+                      val bgShape = GradientDrawable()
+                      bgShape.setColor(b.bg)
+                      bgShape.cornerRadius = 14f
+                      tv.background = bgShape
+
+                      val lp = FrameLayout.LayoutParams(right - left, bottom - top)
+                      lp.leftMargin = left - loc[0]
+                      lp.topMargin = top - loc[1]
+                      c.addView(tv, lp)
+                      shown++
+                  }
+
+                  if (shown > 0) {
+                      overlayVisible = true
+                      // گۆڕانی وێنەکە بەهۆی نیشاندانی خۆمانەوە وەک سکڕۆڵ لەبەرچاو نەگیرێت
+                      suppressUntil = SystemClock.uptimeMillis() + 600
+                  }
+              }
+
+              private fun hideOverlay() {
+                  container?.removeAllViews()
+                  overlayVisible = false
               }
 
               private fun createNotificationChannel() {
@@ -495,16 +690,20 @@ jobs:
 
               override fun onDestroy() {
                   super.onDestroy()
+                  started = false
                   handler.removeCallbacksAndMessages(null)
-                  executor.shutdownNow()
+                  orchestrator.shutdownNow()
+                  workers.shutdownNow()
                   try { recognizer.close() } catch (_: Exception) {}
                   virtualDisplay?.release()
                   imageReader?.close()
                   mediaProjection?.stop()
+                  lastBitmap?.recycle()
+                  lastBitmap = null
                   try {
-                      overlayTextView?.let { windowManager?.removeView(it) }
+                      container?.let { windowManager?.removeView(it) }
                   } catch (_: Exception) {}
-                  overlayTextView = null
+                  container = null
               }
 
               override fun onBind(intent: Intent?): IBinder? = null
@@ -512,6 +711,8 @@ jobs:
               companion object {
                   private const val TAG = "KurdishManhwa"
                   private const val CHANNEL_ID = "KurdishManhwaChannel"
+                  private const val SIG_W = 48
+                  private const val SIG_H = 96
               }
           }
           KMEOF
