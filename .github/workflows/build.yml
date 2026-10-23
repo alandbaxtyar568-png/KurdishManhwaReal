@@ -104,7 +104,8 @@ jobs:
 
               <application
                   android:allowBackup="true"
-                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
                   android:label="Kurdish Manhwa Real"
                   android:supportsRtl="true"
                   android:theme="@style/Theme.AppCompat.Light.NoActionBar">
@@ -159,6 +160,62 @@ jobs:
                   android:textStyle="bold" />
 
           </LinearLayout>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/values/ic_launcher_background.xml)
+          cat > app/src/main/res/values/ic_launcher_background.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#1E88E5</color>
+          </resources>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml)
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml)
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/drawable/ic_launcher_foreground.xml)
+          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <group
+                  android:pivotX="54"
+                  android:pivotY="54"
+                  android:scaleX="0.8"
+                  android:scaleY="0.8">
+                  <path
+                      android:fillColor="#FFFFFF"
+                      android:pathData="M30,32 h48 a8,8 0 0 1 8,8 v22 a8,8 0 0 1 -8,8 h-26 l-12,12 v-12 h-10 a8,8 0 0 1 -8,-8 v-22 a8,8 0 0 1 8,-8 z" />
+                  <path
+                      android:fillColor="#E53935"
+                      android:pathData="M32,43 h40 v4 h-40 z" />
+                  <path
+                      android:fillColor="#0F172A"
+                      android:pathData="M32,52 h32 v4 h-32 z" />
+                  <path
+                      android:fillColor="#2E7D32"
+                      android:pathData="M32,61 h24 v4 h-24 z" />
+                  <path
+                      android:fillColor="#FDD835"
+                      android:strokeColor="#FFFFFF"
+                      android:strokeWidth="2"
+                      android:pathData="M75,34 a9,9 0 1 0 18,0 a9,9 0 1 0 -18,0 z" />
+              </group>
+          </vector>
           KMEOF
           mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/MainActivity.kt)
           cat > app/src/main/java/com/kurdish/manhwareal/MainActivity.kt <<'KMEOF'
@@ -304,7 +361,9 @@ jobs:
               private class Block(val text: String, val rect: Rect, val bg: Int)
 
               private val handler = Handler(Looper.getMainLooper())
-              private val checkInterval = 250L
+              private val checkInterval = 80L
+              private val stableMs = 160L // ئەگەر ١٦٠ms وێنەی نوێ نەهات = سکڕۆڵ وەستاوە
+              private val captureWidth = 720f // وێنەگرتن بە قەبارەی بچووکتر بۆ خێرایی
 
               // ناوچەی سەرەوە (ستاتۆس بار + ئەدرێس بار) و خوارەوە کە وەرناگێڕدرێت
               private val topIgnore = 0.12f
@@ -315,6 +374,10 @@ jobs:
 
               private var screenW = 0
               private var screenH = 0
+              private var capW = 0
+              private var capH = 0
+              private var scale = 1f
+              private var lastFrameTime = 0L
               private var mediaProjection: MediaProjection? = null
               private var virtualDisplay: VirtualDisplay? = null
               private var imageReader: ImageReader? = null
@@ -389,6 +452,7 @@ jobs:
                       setupScreenCapture()
                       setupOverlayWindow()
                       started = true
+                      warmUp()
                       handler.post(runnableCode)
                   } catch (e: Exception) {
                       Log.e(TAG, "هەڵە لە دەستپێکردن: ${e.message}")
@@ -412,9 +476,12 @@ jobs:
                       screenW = m.widthPixels
                       screenH = m.heightPixels
                   }
-                  imageReader = ImageReader.newInstance(screenW, screenH, PixelFormat.RGBA_8888, 2)
+                  scale = if (screenW > captureWidth) captureWidth / screenW else 1f
+                  capW = (screenW * scale).toInt()
+                  capH = (screenH * scale).toInt()
+                  imageReader = ImageReader.newInstance(capW, capH, PixelFormat.RGBA_8888, 2)
                   virtualDisplay = mediaProjection?.createVirtualDisplay(
-                      "ScreenCapture", screenW, screenH, dpi,
+                      "ScreenCapture", capW, capH, dpi,
                       DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                       imageReader?.surface, null, null
                   )
@@ -444,6 +511,13 @@ jobs:
                       }
                   }
                   wm.addView(c, params)
+              }
+
+              private fun warmUp() {
+                  try {
+                      recognizer.process(InputImage.fromBitmap(Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888), 0))
+                  } catch (_: Exception) {}
+                  workers.execute { translate("hello") }
               }
 
               // ---------- وێنەگرتن و دۆزینەوەی سکڕۆڵ ----------
@@ -508,6 +582,7 @@ jobs:
                   val bmp = lastBitmap ?: return
 
                   if (newFrame) {
+                      lastFrameTime = SystemClock.uptimeMillis()
                       val sig = signature(bmp)
                       val prev = prevSig
                       prevSig = sig
@@ -529,7 +604,9 @@ jobs:
                   }
 
                   // شاشە وەستاوە و ئینگلیزییەکە دیارە: OCR بکە
-                  if (needsTranslate && !overlayVisible && !needFreshFrame && !isProcessing) {
+                  if (needsTranslate && !overlayVisible && !needFreshFrame && !isProcessing &&
+                      SystemClock.uptimeMillis() - lastFrameTime >= stableMs
+                  ) {
                       needsTranslate = false
                       lastBitmap = null
                       runOcr(bmp, generation)
@@ -555,7 +632,7 @@ jobs:
                   }
                   if (cols.isEmpty()) return Color.WHITE
                   cols.sortBy { lum(it) }
-                  return cols[cols.size / 2]
+                  return cols[cols.size / 2] or (0xFF shl 24)
               }
 
               private fun runOcr(bmp: Bitmap, gen: Int) {
@@ -570,7 +647,11 @@ jobs:
                               val t = b.text.replace("\n", " ").trim()
                               if (t.count { it.isLetter() } < 2) continue
                               if (box.top < h * topIgnore || box.bottom > h * (1f - bottomIgnore)) continue
-                              blocks.add(Block(t, Rect(box), sampleBg(bmp, box)))
+                              val screenRect = Rect(
+                                  (box.left / scale).toInt(), (box.top / scale).toInt(),
+                                  (box.right / scale).toInt(), (box.bottom / scale).toInt()
+                              )
+                              blocks.add(Block(t, screenRect, sampleBg(bmp, box)))
                               if (blocks.size >= 12) break
                           }
                           if (blocks.isNotEmpty()) translateBlocks(blocks, gen)
@@ -586,11 +667,10 @@ jobs:
 
               private fun translate(text: String): String? {
                   cache[text]?.let { return it }
-                  var conn: HttpURLConnection? = null
                   return try {
                       val urlString = "https://translate.googleapis.com/translate_a/single" +
                           "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text.take(500), "UTF-8")
-                      conn = URL(urlString).openConnection() as HttpURLConnection
+                      val conn = URL(urlString).openConnection() as HttpURLConnection
                       conn.requestMethod = "GET"
                       conn.connectTimeout = 4000
                       conn.readTimeout = 4000
@@ -607,8 +687,6 @@ jobs:
                   } catch (e: Exception) {
                       Log.e(TAG, "هەڵە لە وەرگێڕان: ${e.message}")
                       null
-                  } finally {
-                      conn?.disconnect()
                   }
               }
 
@@ -659,6 +737,7 @@ jobs:
                       tv.textDirection = View.TEXT_DIRECTION_RTL
                       tv.includeFontPadding = false
                       tv.setPadding(4, 2, 4, 2)
+                      tv.alpha = 1f
                       val bgShape = GradientDrawable()
                       bgShape.setColor(b.bg)
                       bgShape.cornerRadius = 14f
