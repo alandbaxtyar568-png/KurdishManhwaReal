@@ -1,0 +1,525 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.4'
+
+      - name: Create project files
+        run: |
+          mkdir -p $(dirname settings.gradle)
+          cat > settings.gradle <<'KMEOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "KurdishManhwaReal"
+          include ':app'
+          KMEOF
+          mkdir -p $(dirname build.gradle)
+          cat > build.gradle <<'KMEOF'
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+          }
+          KMEOF
+          mkdir -p $(dirname gradle.properties)
+          cat > gradle.properties <<'KMEOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          KMEOF
+          mkdir -p $(dirname app/build.gradle)
+          cat > app/build.gradle <<'KMEOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.kurdish.manhwareal'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.kurdish.manhwareal"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+
+              // ML Kit - Latin text recognition (English)
+              implementation 'com.google.mlkit:text-recognition:16.0.0'
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/AndroidManifest.xml)
+          cat > app/src/main/AndroidManifest.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:label="Kurdish Manhwa Real"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".KurdishRealTimeTranslatorService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="mediaProjection" />
+              </application>
+
+          </manifest>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/layout/activity_main.xml)
+          cat > app/src/main/res/layout/activity_main.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#121212"
+              android:gravity="center"
+              android:orientation="vertical"
+              android:padding="24dp">
+
+              <TextView
+                  android:id="@+id/txtTitle"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_marginBottom="40dp"
+                  android:text="Kurdish Manhwa Real"
+                  android:textColor="#FFFFFF"
+                  android:textSize="28sp"
+                  android:textStyle="bold" />
+
+              <Button
+                  android:id="@+id/btnToggleService"
+                  android:layout_width="match_parent"
+                  android:layout_height="65dp"
+                  android:backgroundTint="#1E88E5"
+                  android:text="چالاککردنی وەرگێڕانی کاتی ڕاستەقینە"
+                  android:textColor="#FFFFFF"
+                  android:textSize="18sp"
+                  android:textStyle="bold" />
+
+          </LinearLayout>
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/MainActivity.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/MainActivity.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.content.res.ColorStateList
+          import android.graphics.Color
+          import android.media.projection.MediaProjectionManager
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.widget.Button
+          import android.widget.Toast
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.content.ContextCompat
+
+          class MainActivity : AppCompatActivity() {
+
+              private lateinit var projectionManager: MediaProjectionManager
+              private lateinit var btnToggle: Button
+              private var isServiceRunning = false
+
+              private val notificationPermission =
+                  registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* بەردەوام دەبین، پێویست بە وەڵام نییە */ }
+
+              private val captureLauncher =
+                  registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                      val data = result.data
+                      if (result.resultCode == Activity.RESULT_OK && data != null) {
+                          val serviceIntent = Intent(this, KurdishRealTimeTranslatorService::class.java).apply {
+                              putExtra("RESULT_CODE", result.resultCode)
+                              putExtra("DATA_INTENT", data)
+                          }
+                          ContextCompat.startForegroundService(this, serviceIntent)
+                          setRunningUi(true)
+                          Toast.makeText(this, "ئێستا بڕۆ ناو مانگاکەت، خۆکارانە وەردەگێڕدرێت!", Toast.LENGTH_LONG).show()
+                          moveTaskToBack(true)
+                      }
+                  }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                  btnToggle = findViewById(R.id.btnToggleService)
+
+                  if (Build.VERSION.SDK_INT >= 33 &&
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                      != PackageManager.PERMISSION_GRANTED
+                  ) {
+                      notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                  }
+
+                  btnToggle.setOnClickListener {
+                      if (!isServiceRunning) {
+                          if (!Settings.canDrawOverlays(this)) {
+                              Toast.makeText(this, "تکایە مۆڵەتی Display over other apps چالاک بکە، پاشان دووبارە دوگمەکە بدە", Toast.LENGTH_LONG).show()
+                              startActivity(
+                                  Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                              )
+                              return@setOnClickListener
+                          }
+                          captureLauncher.launch(projectionManager.createScreenCaptureIntent())
+                      } else {
+                          stopService(Intent(this, KurdishRealTimeTranslatorService::class.java))
+                          setRunningUi(false)
+                      }
+                  }
+              }
+
+              private fun setRunningUi(running: Boolean) {
+                  isServiceRunning = running
+                  if (running) {
+                      btnToggle.text = "وەرگێڕان چالاکە (بۆ وەستاندن لێرە بدە)"
+                      btnToggle.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#E53935"))
+                  } else {
+                      btnToggle.text = "چالاککردنی وەرگێڕانی کاتی ڕاستەقینە"
+                      btnToggle.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#1E88E5"))
+                  }
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/KurdishRealTimeTranslatorService.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/KurdishRealTimeTranslatorService.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.app.Activity
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.graphics.Bitmap
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.hardware.display.DisplayManager
+          import android.hardware.display.VirtualDisplay
+          import android.media.ImageReader
+          import android.media.projection.MediaProjection
+          import android.media.projection.MediaProjectionManager
+          import android.os.Build
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.util.DisplayMetrics
+          import android.util.Log
+          import android.view.Gravity
+          import android.view.View
+          import android.view.WindowManager
+          import android.widget.TextView
+          import com.google.mlkit.vision.common.InputImage
+          import com.google.mlkit.vision.text.TextRecognition
+          import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+          import org.json.JSONArray
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.util.concurrent.Executors
+
+          class KurdishRealTimeTranslatorService : Service() {
+
+              private val handler = Handler(Looper.getMainLooper())
+              private val checkInterval = 350L
+              private val ocrHeightFraction = 0.75f // تەنها ٧٥٪ی سەرەوەی شاشە دەخوێنرێتەوە (overlay لە خوارەوەیە)
+
+              private var lastProcessedText = ""
+              private var mediaProjection: MediaProjection? = null
+              private var virtualDisplay: VirtualDisplay? = null
+              private var imageReader: ImageReader? = null
+              private var windowManager: WindowManager? = null
+              private var overlayTextView: TextView? = null
+
+              private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+              private val executor = Executors.newSingleThreadExecutor()
+
+              @Volatile private var isProcessing = false
+              @Volatile private var requestCounter = 0
+              private var started = false
+
+              private val runnableCode = object : Runnable {
+                  override fun run() {
+                      captureAndProcess()
+                      handler.postDelayed(this, checkInterval)
+                  }
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (started) return START_NOT_STICKY
+
+                  createNotificationChannel()
+                  val notification = Notification.Builder(this, CHANNEL_ID)
+                      .setContentTitle("Kurdish Manhwa Real")
+                      .setContentText("چاودێری شاشە دەکرێت بۆ وەرگێڕانی خێرا...")
+                      .setSmallIcon(android.R.drawable.ic_menu_view)
+                      .build()
+
+                  // دەبێت پێش getMediaProjection بانگ بکرێت (ئەندرۆید ١٤)
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                  } else {
+                      startForeground(1, notification)
+                  }
+
+                  val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
+                  val dataIntent: Intent? = if (Build.VERSION.SDK_INT >= 33) {
+                      intent?.getParcelableExtra("DATA_INTENT", Intent::class.java)
+                  } else {
+                      @Suppress("DEPRECATION")
+                      intent?.getParcelableExtra("DATA_INTENT")
+                  }
+
+                  if (dataIntent == null || resultCode != Activity.RESULT_OK) {
+                      stopSelf()
+                      return START_NOT_STICKY
+                  }
+
+                  try {
+                      val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                      mediaProjection = mpManager.getMediaProjection(resultCode, dataIntent)
+                      // ئەندرۆید ١٤: دەبێت callback تۆمار بکرێت پێش createVirtualDisplay
+                      mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                          override fun onStop() {
+                              handler.post { stopSelf() }
+                          }
+                      }, handler)
+
+                      setupScreenCapture()
+                      setupOverlayWindow()
+                      started = true
+                      handler.post(runnableCode)
+                  } catch (e: Exception) {
+                      Log.e(TAG, "هەڵە لە دەستپێکردن: ${e.message}")
+                      stopSelf()
+                  }
+
+                  return START_NOT_STICKY
+              }
+
+              private fun screenSize(): Triple<Int, Int, Int> {
+                  val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                  val dpi = resources.displayMetrics.densityDpi
+                  return if (Build.VERSION.SDK_INT >= 30) {
+                      val b = wm.maximumWindowMetrics.bounds
+                      Triple(b.width(), b.height(), dpi)
+                  } else {
+                      val m = DisplayMetrics()
+                      @Suppress("DEPRECATION")
+                      wm.defaultDisplay.getRealMetrics(m)
+                      Triple(m.widthPixels, m.heightPixels, dpi)
+                  }
+              }
+
+              private fun setupScreenCapture() {
+                  val (w, h, dpi) = screenSize()
+                  imageReader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+                  virtualDisplay = mediaProjection?.createVirtualDisplay(
+                      "ScreenCapture", w, h, dpi,
+                      DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                      imageReader?.surface, null, null
+                  )
+              }
+
+              private fun setupOverlayWindow() {
+                  val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                  windowManager = wm
+
+                  overlayTextView = TextView(this).apply {
+                      textSize = 16f
+                      setTextColor(Color.YELLOW)
+                      setBackgroundColor(Color.parseColor("#CC000000"))
+                      setPadding(24, 24, 24, 24)
+                      gravity = Gravity.CENTER
+                      maxLines = 6
+                      textDirection = View.TEXT_DIRECTION_RTL
+                  }
+
+                  val params = WindowManager.LayoutParams(
+                      WindowManager.LayoutParams.MATCH_PARENT,
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                      PixelFormat.TRANSLUCENT
+                  ).apply {
+                      gravity = Gravity.BOTTOM
+                  }
+                  wm.addView(overlayTextView, params)
+              }
+
+              private fun captureAndProcess() {
+                  if (isProcessing) return
+                  val reader = imageReader ?: return
+                  val image = reader.acquireLatestImage() ?: return
+
+                  val bitmap: Bitmap = try {
+                      val plane = image.planes[0]
+                      val pixelStride = plane.pixelStride
+                      val rowPadding = plane.rowStride - pixelStride * image.width
+                      val full = Bitmap.createBitmap(
+                          image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888
+                      )
+                      full.copyPixelsFromBuffer(plane.buffer)
+                      val cropped = Bitmap.createBitmap(full, 0, 0, image.width, (image.height * ocrHeightFraction).toInt())
+                      if (cropped !== full) full.recycle()
+                      cropped
+                  } catch (e: Exception) {
+                      Log.e(TAG, "هەڵە لە وێنەگرتن: ${e.message}")
+                      return
+                  } finally {
+                      image.close()
+                  }
+
+                  isProcessing = true
+                  recognizer.process(InputImage.fromBitmap(bitmap, 0))
+                      .addOnSuccessListener { visionText ->
+                          val currentText = visionText.text.replace("\n", " ").trim()
+                          if (currentText.length >= 3 && currentText != lastProcessedText) {
+                              lastProcessedText = currentText
+                              translateToKurdish(currentText)
+                          }
+                      }
+                      .addOnFailureListener { e -> Log.e(TAG, "OCR هەڵە: ${e.message}") }
+                      .addOnCompleteListener {
+                          isProcessing = false
+                          bitmap.recycle()
+                      }
+              }
+
+              private fun translateToKurdish(text: String) {
+                  val myId = ++requestCounter
+                  executor.execute {
+                      var connection: HttpURLConnection? = null
+                      try {
+                          val urlString = "https://translate.googleapis.com/translate_a/single" +
+                              "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text.take(1500), "UTF-8")
+                          connection = URL(urlString).openConnection() as HttpURLConnection
+                          connection.requestMethod = "GET"
+                          connection.connectTimeout = 5000
+                          connection.readTimeout = 5000
+                          connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+
+                          val response = connection.inputStream.bufferedReader().use { it.readText() }
+                          val subArray = JSONArray(response).getJSONArray(0)
+                          val result = StringBuilder()
+                          for (i in 0 until subArray.length()) {
+                              result.append(subArray.getJSONArray(i).optString(0, ""))
+                          }
+
+                          // تەنها دوایین داواکاری نیشان بدە
+                          if (myId == requestCounter) {
+                              handler.post { overlayTextView?.text = result.toString() }
+                          }
+                      } catch (e: Exception) {
+                          Log.e(TAG, "هەڵە لە وەرگێڕان: ${e.message}")
+                      } finally {
+                          connection?.disconnect()
+                      }
+                  }
+              }
+
+              private fun createNotificationChannel() {
+                  val channel = NotificationChannel(CHANNEL_ID, "Kurdish Manhwa Service", NotificationManager.IMPORTANCE_LOW)
+                  getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  handler.removeCallbacksAndMessages(null)
+                  executor.shutdownNow()
+                  try { recognizer.close() } catch (_: Exception) {}
+                  virtualDisplay?.release()
+                  imageReader?.close()
+                  mediaProjection?.stop()
+                  try {
+                      overlayTextView?.let { windowManager?.removeView(it) }
+                  } catch (_: Exception) {}
+                  overlayTextView = null
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              companion object {
+                  private const val TAG = "KurdishManhwa"
+                  private const val CHANNEL_ID = "KurdishManhwaChannel"
+              }
+          }
+          KMEOF
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KurdishManhwaReal-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
