@@ -601,6 +601,88 @@ jobs:
                   return futures.joinToString(" ") { it.get() }
               }
 
+              private val trCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+              private fun noLatin(s: String): String =
+                  s.replace(Regex("[A-Za-z]+"), "").replace(Regex("\\s+"), " ").trim()
+
+              private fun isJunk(t: String): Boolean {
+                  val l = t.lowercase()
+                  if (l.contains(".com") || l.contains("www") || l.contains("http") || l.contains("asura") || l.contains("scns")) return true
+                  return t.count { it.isLetter() } < 2
+              }
+
+              /** AI: چەند دەقێک پێکەوە دەگێڕێت بۆ کوردی سۆرانیی سروشتی، بەبێ هیچ پیتێکی لاتینی */
+              private fun aiTranslate(texts: List<String>): List<String>? {
+                  return try {
+                      val arr = JSONArray()
+                      for (t in texts) arr.put(t)
+                      val prompt = "You are a professional translator of Korean manhwa and webtoons into Kurdish Sorani (Arabic script). " +
+                          "Below is a JSON array of English snippets that OCR read from one comic page, in reading order. " +
+                          "Translate every snippet into natural, fluent, everyday spoken Kurdish Sorani, the way a native speaker would really say it in a comic, keeping the tone, emotion and personality of the speaker. " +
+                          "Rules: (1) Use Arabic script only and NEVER output any Latin letter: write names, titles and sound effects in Kurdish script (transliterate them). " +
+                          "(2) Fix obvious OCR mistakes using the context of the other snippets. " +
+                          "(3) If a snippet is OCR garbage, a watermark, a website name or has no meaning, return an empty string for it. " +
+                          "(4) Return ONLY a JSON array of strings with exactly " + texts.size + " items, in the same order.\n" +
+                          arr.toString()
+                      val part = JSONObject().put("text", prompt)
+                      val content = JSONObject().put("parts", JSONArray().put(part))
+                      val body = JSONObject()
+                          .put("contents", JSONArray().put(content))
+                          .put("generationConfig", JSONObject().put("temperature", 0.4).put("responseMimeType", "application/json"))
+                      val resp = callGemini(body.toString())
+                      val text = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
+                          .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                      val st = text.indexOf('[')
+                      val en = text.lastIndexOf(']')
+                      if (st < 0 || en <= st) return null
+                      val out = JSONArray(text.substring(st, en + 1))
+                      if (out.length() != texts.size) return null
+                      val list = ArrayList<String>()
+                      for (i in 0 until out.length()) list.add(out.optString(i, "").trim())
+                      list
+                  } catch (ex: Exception) {
+                      null
+                  }
+              }
+
+              /** وەرگێڕانی چەند دەقێک: یەکەم AI، ئەگەر نەبوو Google. "" واتە تەنها بیسڕەوە و هیچ مەنووسە */
+              fun translateMany(texts: List<String>): List<String?> {
+                  val result = arrayOfNulls<String>(texts.size)
+                  val need = ArrayList<Int>()
+                  for (i in texts.indices) {
+                      if (isJunk(texts[i])) {
+                          result[i] = ""
+                          continue
+                      }
+                      val c = trCache[texts[i]]
+                      if (c != null) result[i] = c else need.add(i)
+                  }
+                  if (need.isNotEmpty()) {
+                      val ai = aiTranslate(need.map { texts[it] })
+                      if (ai != null) {
+                          for ((k, i) in need.withIndex()) {
+                              result[i] = ai[k]
+                              trCache[texts[i]] = ai[k]
+                          }
+                      } else {
+                          val futures = need.map { i ->
+                              io.submit(Callable<String?> {
+                                  try { noLatin(translateChunk(texts[i])) } catch (ex: Exception) { null }
+                              })
+                          }
+                          for ((k, i) in need.withIndex()) {
+                              val r: String? = try { futures[k].get(6, java.util.concurrent.TimeUnit.SECONDS) } catch (ex: Exception) { null }
+                              if (r != null && r.isNotEmpty()) {
+                                  result[i] = r
+                                  trCache[texts[i]] = r
+                              }
+                          }
+                      }
+                  }
+                  return result.toList()
+              }
+
               fun loadImage(url: String, iv: ImageView) {
                   iv.tag = url
                   if (url.isBlank()) {
@@ -1728,7 +1810,7 @@ jobs:
 
           class KurdishRealTimeTranslatorService : Service() {
 
-              private class Block(val text: String, val rect: Rect, val bg: Int)
+              private class Block(val text: String, val rect: Rect, val bg: Int, val fill: Bitmap? = null)
 
               private val handler = Handler(Looper.getMainLooper())
               private val checkInterval = 80L
@@ -2009,6 +2091,50 @@ jobs:
                   return cols[cols.size / 2] or (0xFF shl 24)
               }
 
+              private fun padRect(b: Rect): Rect {
+                  val px = (b.width() * 0.12f).toInt() + 5
+                  val py = (b.height() * 0.14f).toInt() + 4
+                  return Rect(b.left - px, b.top - py, b.right + px, b.bottom + py)
+              }
+
+              private fun rowColor(bmp: Bitmap, x0: Int, dir: Int, y: Int): Int {
+                  val cs = ArrayList<Int>()
+                  for (d in intArrayOf(4, 9, 14)) {
+                      val x = x0 + dir * d
+                      if (x in 0 until bmp.width && y in 0 until bmp.height) cs.add(bmp.getPixel(x, y))
+                  }
+                  if (cs.isEmpty()) return Color.WHITE
+                  cs.sortBy { lum(it) }
+                  return cs[cs.size / 2] or (0xFF shl 24)
+              }
+
+              /** دەق دەسڕێتەوە و پشتەوە (وێنە/بالۆن) دەهێڵێتەوە: هەر ڕیزێک بە ڕەنگی دەوروبەری لای چەپ و ڕاستی دەپڕکرێتەوە */
+              private fun buildFill(bmp: Bitmap, r: Rect): Bitmap? {
+                  return try {
+                      val top = r.top.coerceAtLeast(0)
+                      val bottom = r.bottom.coerceAtMost(bmp.height)
+                      val h = bottom - top
+                      if (h <= 0 || h > 4000) return null
+                      val gw = 8
+                      val px = IntArray(gw * h)
+                      for (j in 0 until h) {
+                          val y = top + j
+                          val l = rowColor(bmp, r.left, -1, y)
+                          val rr = rowColor(bmp, r.right, 1, y)
+                          for (i in 0 until gw) {
+                              val t = i / (gw - 1).toFloat()
+                              val red = (Color.red(l) + (Color.red(rr) - Color.red(l)) * t).toInt()
+                              val green = (Color.green(l) + (Color.green(rr) - Color.green(l)) * t).toInt()
+                              val blue = (Color.blue(l) + (Color.blue(rr) - Color.blue(l)) * t).toInt()
+                              px[j * gw + i] = Color.rgb(red, green, blue)
+                          }
+                      }
+                      Bitmap.createBitmap(px, gw, h, Bitmap.Config.ARGB_8888)
+                  } catch (ex: Throwable) {
+                      null
+                  }
+              }
+
               private fun runOcr(bmp: Bitmap, gen: Int) {
                   isProcessing = true
                   val h = bmp.height
@@ -2025,7 +2151,7 @@ jobs:
                                   (box.left / scale).toInt(), (box.top / scale).toInt(),
                                   (box.right / scale).toInt(), (box.bottom / scale).toInt()
                               )
-                              blocks.add(Block(t, screenRect, sampleBg(bmp, box)))
+                              blocks.add(Block(t, screenRect, sampleBg(bmp, box), buildFill(bmp, padRect(box))))
                               if (blocks.size >= 12) break
                           }
                           if (blocks.isNotEmpty()) translateBlocks(blocks, gen)
@@ -2068,11 +2194,8 @@ jobs:
                   if (orchestrator.isShutdown) return
                   orchestrator.execute {
                       try {
-                          // هەموو بلۆکەکان پێکەوە (پاڕەلێل) وەردەگێڕدرێن بۆ خێرایی
-                          val futures = blocks.map { b -> workers.submit(Callable<String?> { translate(b.text) }) }
-                          val results = futures.map { f ->
-                              try { f.get(6, TimeUnit.SECONDS) } catch (e: Exception) { null }
-                          }
+                          // هەموو بلۆکەکان پێکەوە بە AI دەگێڕدرێن (مرۆڤانە)
+                          val results = Net.translateMany(blocks.map { it.text })
                           handler.post {
                               if (started && gen == generation && !overlayVisible) showBlocks(blocks, results)
                           }
@@ -2095,8 +2218,8 @@ jobs:
                   for (i in blocks.indices) {
                       val tr = results[i] ?: continue
                       val b = blocks[i]
-                      val padX = (b.rect.width() * 0.10f).toInt() + 8
-                      val padY = (b.rect.height() * 0.08f).toInt() + 6
+                      val padX = (b.rect.width() * 0.12f).toInt() + 10
+                      val padY = (b.rect.height() * 0.14f).toInt() + 8
                       val left = (b.rect.left - padX).coerceAtLeast(0)
                       val top = (b.rect.top - padY).coerceAtLeast(0)
                       val right = (b.rect.right + padX).coerceAtMost(screenW)
@@ -2115,10 +2238,17 @@ jobs:
                           tv.includeFontPadding = false
                           tv.setPadding(4, 2, 4, 2)
                           tv.alpha = 1f
-                          val bgShape = GradientDrawable()
-                          bgShape.setColor(b.bg)
-                          bgShape.cornerRadius = 14f
-                          tv.background = bgShape
+                          val fillBmp = b.fill
+                          if (fillBmp != null) {
+                              val bd = android.graphics.drawable.BitmapDrawable(resources, fillBmp)
+                              bd.setFilterBitmap(true)
+                              tv.background = bd
+                          } else {
+                              val bgShape = GradientDrawable()
+                              bgShape.setColor(b.bg)
+                              bgShape.cornerRadius = 14f
+                              tv.background = bgShape
+                          }
 
                           val lp = FrameLayout.LayoutParams(right - left, bottom - top)
                           lp.leftMargin = left - loc[0]
@@ -2342,7 +2472,7 @@ jobs:
            */
           class WebTab(private val act: Activity) {
 
-              private class Block(val text: String, val rect: Rect, val bg: Int)
+              private class Block(val text: String, val rect: Rect, val bg: Int, val fill: Bitmap? = null)
 
               val root = LinearLayout(act)
               private val web = WebView(act)
@@ -2359,6 +2489,10 @@ jobs:
               private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
               private val trPool = Executors.newFixedThreadPool(10)
               private val ocrRunnable = Runnable { runOcr() }
+              private val hideExit = Runnable { exitBtn.visibility = View.GONE }
+              private var tapX = 0f
+              private var tapY = 0f
+              private var tapT = 0L
 
               private var translating = false
               private var fullscreen = false
@@ -2519,6 +2653,22 @@ jobs:
                       }
                   }
 
+                  web.setOnTouchListener { _, ev ->
+                      when (ev.actionMasked) {
+                          android.view.MotionEvent.ACTION_DOWN -> {
+                              tapX = ev.x
+                              tapY = ev.y
+                              tapT = SystemClock.uptimeMillis()
+                          }
+                          android.view.MotionEvent.ACTION_UP -> {
+                              if (fullscreen && Math.abs(ev.x - tapX) < 25f && Math.abs(ev.y - tapY) < 25f &&
+                                  SystemClock.uptimeMillis() - tapT < 350
+                              ) showExitTemporarily()
+                          }
+                      }
+                      false
+                  }
+
                   web.setOnScrollChangeListener { _, sx, sy, _, _ ->
                       reposition(sx, sy)
                       if (translating) {
@@ -2569,11 +2719,19 @@ jobs:
                   if (fullscreen == on) return
                   fullscreen = on
                   topBars.visibility = if (on) View.GONE else View.VISIBLE
-                  exitBtn.visibility = if (on) View.VISIBLE else View.GONE
+                  // دوگمەی دەرچوون لە تەواوی شاشە شاراوەیە؛ بە یەک کرتە لە شاشەکە دەردەکەوێت
+                  handler.removeCallbacks(hideExit)
+                  exitBtn.visibility = View.GONE
                   onFullscreen?.invoke(on)
               }
 
               fun exitFullscreen() = setFullscreen(false)
+
+              private fun showExitTemporarily() {
+                  exitBtn.visibility = View.VISIBLE
+                  handler.removeCallbacks(hideExit)
+                  handler.postDelayed(hideExit, 3000)
+              }
 
               fun back(): Boolean {
                   if (fullscreen) {
@@ -2655,6 +2813,50 @@ jobs:
                   return cols[cols.size / 2] or (0xFF shl 24)
               }
 
+              private fun padRect(b: Rect): Rect {
+                  val px = (b.width() * 0.12f).toInt() + 5
+                  val py = (b.height() * 0.14f).toInt() + 4
+                  return Rect(b.left - px, b.top - py, b.right + px, b.bottom + py)
+              }
+
+              private fun rowColor(bmp: Bitmap, x0: Int, dir: Int, y: Int): Int {
+                  val cs = ArrayList<Int>()
+                  for (d in intArrayOf(4, 9, 14)) {
+                      val x = x0 + dir * d
+                      if (x in 0 until bmp.width && y in 0 until bmp.height) cs.add(bmp.getPixel(x, y))
+                  }
+                  if (cs.isEmpty()) return Color.WHITE
+                  cs.sortBy { lum(it) }
+                  return cs[cs.size / 2] or (0xFF shl 24)
+              }
+
+              /** دەق دەسڕێتەوە و پشتەوە (وێنە/بالۆن) دەهێڵێتەوە: هەر ڕیزێک بە ڕەنگی دەوروبەری لای چەپ و ڕاستی دەپڕکرێتەوە */
+              private fun buildFill(bmp: Bitmap, r: Rect): Bitmap? {
+                  return try {
+                      val top = r.top.coerceAtLeast(0)
+                      val bottom = r.bottom.coerceAtMost(bmp.height)
+                      val h = bottom - top
+                      if (h <= 0 || h > 4000) return null
+                      val gw = 8
+                      val px = IntArray(gw * h)
+                      for (j in 0 until h) {
+                          val y = top + j
+                          val l = rowColor(bmp, r.left, -1, y)
+                          val rr = rowColor(bmp, r.right, 1, y)
+                          for (i in 0 until gw) {
+                              val t = i / (gw - 1).toFloat()
+                              val red = (Color.red(l) + (Color.red(rr) - Color.red(l)) * t).toInt()
+                              val green = (Color.green(l) + (Color.green(rr) - Color.green(l)) * t).toInt()
+                              val blue = (Color.blue(l) + (Color.blue(rr) - Color.blue(l)) * t).toInt()
+                              px[j * gw + i] = Color.rgb(red, green, blue)
+                          }
+                      }
+                      Bitmap.createBitmap(px, gw, h, Bitmap.Config.ARGB_8888)
+                  } catch (ex: Throwable) {
+                      null
+                  }
+              }
+
               /** ئایا ئەم شوێنە پێشتر دەقی کوردی لەسەر دانراوە؟ */
               private fun covered(pl: Int, pt: Int, pr: Int, pb: Int): Boolean {
                   val cx = (pl + pr) / 2
@@ -2732,7 +2934,7 @@ jobs:
                                   (box.right / scale).toInt(), (box.bottom / scale).toInt()
                               )
                               if (covered(r.left + sx, r.top + sy, r.right + sx, r.bottom + sy)) continue
-                              blocks.add(Block(t, r, sampleBg(bmp, box)))
+                              blocks.add(Block(t, r, sampleBg(bmp, box), buildFill(bmp, padRect(box))))
                               if (blocks.size >= 14) break
                           }
                           if (blocks.isEmpty()) {
@@ -2741,15 +2943,7 @@ jobs:
                           }
                           Thread {
                               try {
-                                  val futures = HashMap<String, java.util.concurrent.Future<String?>>()
-                                  for (b in blocks) {
-                                      if (!futures.containsKey(b.text)) {
-                                          futures[b.text] = trPool.submit(Callable<String?> { Tr.translate(b.text) })
-                                      }
-                                  }
-                                  val results = blocks.map { b ->
-                                      try { futures[b.text]?.get(6, TimeUnit.SECONDS) } catch (e: Exception) { null }
-                                  }
+                                  val results = Net.translateMany(blocks.map { it.text })
                                   handler.post { addBlocks(blocks, results, sx, sy, gen) }
                               } catch (e: Exception) {
                                   handler.post { busy = false }
@@ -2769,8 +2963,8 @@ jobs:
                   for (i in blocks.indices) {
                       val tr = results[i] ?: continue
                       val b = blocks[i]
-                      val padX = (b.rect.width() * 0.10f).toInt() + 8
-                      val padY = (b.rect.height() * 0.08f).toInt() + 6
+                      val padX = (b.rect.width() * 0.12f).toInt() + 10
+                      val padY = (b.rect.height() * 0.14f).toInt() + 8
                       val left = (b.rect.left - padX).coerceAtLeast(0)
                       val top = (b.rect.top - padY).coerceAtLeast(0)
                       val right = (b.rect.right + padX).coerceAtMost(maxW)
@@ -2790,10 +2984,17 @@ jobs:
                       tv.textDirection = View.TEXT_DIRECTION_RTL
                       tv.includeFontPadding = false
                       tv.setPadding(4, 2, 4, 2)
-                      val shape = GradientDrawable()
-                      shape.setColor(b.bg)
-                      shape.cornerRadius = 14f
-                      tv.background = shape
+                      val fillBmp = b.fill
+                      if (fillBmp != null) {
+                          val bd = android.graphics.drawable.BitmapDrawable(act.resources, fillBmp)
+                          bd.setFilterBitmap(true)
+                          tv.background = bd
+                      } else {
+                          val shape = GradientDrawable()
+                          shape.setColor(b.bg)
+                          shape.cornerRadius = 14f
+                          tv.background = shape
+                      }
                       tv.tag = intArrayOf(pl, pt)
 
                       val lp = FrameLayout.LayoutParams(right - left, bottom - top)
