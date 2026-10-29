@@ -86,6 +86,7 @@ jobs:
               implementation 'androidx.core:core-ktx:1.12.0'
               implementation 'androidx.appcompat:appcompat:1.6.1'
               implementation 'com.google.android.material:material:1.11.0'
+              implementation 'androidx.recyclerview:recyclerview:1.3.2'
 
               // ML Kit - Latin text recognition (English)
               implementation 'com.google.mlkit:text-recognition:16.0.0'
@@ -108,11 +109,12 @@ jobs:
                   android:roundIcon="@mipmap/ic_launcher_round"
                   android:label="Kurdish Manhwa Real"
                   android:supportsRtl="true"
-                  android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
 
                   <activity
                       android:name=".MainActivity"
-                      android:exported="true">
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -124,68 +126,15 @@ jobs:
                       android:enabled="true"
                       android:exported="false"
                       android:foregroundServiceType="mediaProjection" />
-
-                  <service
-                      android:name=".OverlayAccessibilityService"
-                      android:exported="false"
-                      android:label="Kurdish Manhwa Real"
-                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-                      <intent-filter>
-                          <action android:name="android.accessibilityservice.AccessibilityService" />
-                      </intent-filter>
-                      <meta-data
-                          android:name="android.accessibilityservice"
-                          android:resource="@xml/accessibility_service_config" />
-                  </service>
               </application>
 
           </manifest>
-          KMEOF
-          mkdir -p $(dirname app/src/main/res/layout/activity_main.xml)
-          cat > app/src/main/res/layout/activity_main.xml <<'KMEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:background="#121212"
-              android:gravity="center"
-              android:orientation="vertical"
-              android:padding="24dp">
-
-              <ImageView
-                  android:layout_width="240dp"
-                  android:layout_height="240dp"
-                  android:layout_marginBottom="16dp"
-                  android:contentDescription="Kurdish Manhwa Real"
-                  android:src="@drawable/ic_launcher_foreground" />
-
-              <TextView
-                  android:id="@+id/txtTitle"
-                  android:layout_width="wrap_content"
-                  android:layout_height="wrap_content"
-                  android:layout_marginBottom="40dp"
-                  android:text="Kurdish Manhwa Real"
-                  android:textColor="#FFFFFF"
-                  android:textSize="28sp"
-                  android:textStyle="bold" />
-
-              <Button
-                  android:id="@+id/btnToggleService"
-                  android:layout_width="match_parent"
-                  android:layout_height="65dp"
-                  android:backgroundTint="#1E88E5"
-                  android:text="چالاککردنی وەرگێڕانی کاتی ڕاستەقینە"
-                  android:textColor="#FFFFFF"
-                  android:textSize="18sp"
-                  android:textStyle="bold" />
-
-          </LinearLayout>
           KMEOF
           mkdir -p $(dirname app/src/main/res/values/ic_launcher_background.xml)
           cat > app/src/main/res/values/ic_launcher_background.xml <<'KMEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <color name="ic_launcher_background">#10151B</color>
+              <color name="ic_launcher_background">#0B0F1A</color>
           </resources>
           KMEOF
           mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml)
@@ -204,331 +153,674 @@ jobs:
               <foreground android:drawable="@drawable/ic_launcher_foreground" />
           </adaptive-icon>
           KMEOF
-          mkdir -p app/src/main/res/drawable-nodpi
-          base64 -d > app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp <<'KMEOF'
-          UklGRppUAABXRUJQVlA4II5UAAAw9gCdASqwAbABPpFEmkolpCIpKN4omSASCWJu4XVRDFVcriFPkvso+efd/N71rdc+UN7R33P9
-          /6r/6V/r/YG/XT9jfXm/Z33n/ut6lP3Z9ZT/r/uL7t/8L6hH9x/3f//7Er94PYP/cv1k//b+8Hwv/3T/sfvF7TP/19gD//+3j0f/
-          gG0feO/Qf6H+4/5v/s+vFlP9T/jv2h9RP5b+Jf5f989Gv+r/nfE34pf8fqC/k/9H/3now/Wdp9v3+f9Aj3I+z/9X/GeoP8//4/8n
-          6lfZL/ve4D/Sf7z/0/Y7/W+BT+T/5/sA/0r/EfsD7tX9p/+P9l52fqH9sPgL/nf9+9OT//+7T0fP3f//5M67u7u7u7u7u7u7u7u7
-          u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u0pL77VgEUMFSxNOcinpWeJKGp8qyX5mZmZmZmZkuU
-          /hYgFNKE71KXKuOMKS4N22b02/GeCjxrcy0ku1q8R8MMxqWRHzAWB2g4OqqqqqqqqMcf++RTabqqg58laVI19/4jjDl8B/Z2Rd1n
-          FO6/9qNSe6kzJg4cv6hFhF31RH2ecBNK8RP8xf5/o98k8vccTbJrdVVVVVTlYLvH3hxWELsQhrh243e/ic6RxFpZ/+Y+POm2FQGi
-          toGok5rNC8q+ZHNF6ZbQkl9L0rxa5np5Si72SUOBhOwfPkOHglIKVnCkau2WPgscXo5d90+Z+d3d3dyNcAF0A58Nn+OB3x5o4Ych
-          47txzEoqMJiwiCkz70x3Her6fVd9zWUGpeEZdWdPQ4dzcDJ3Hl1WCtUEXlnLMITfJOv9WmUi43zvhk5Y+DGWkAbheEv2fdlwwaWZ
-          pu7u7m/pNpBB1ovrWCSYb7gs7ePn4NA2pL6FPatKuGAuqi4jqzOfpdPwoaVQmH+AIcB54OJIYfRif00t3cwo1uxJS7TtYbjMaEov
-          Jlsbu7jIRIuIG2LWMUOxox1mQ6rIlLPmb5mCYcBGqXYctPu7u74UbQuH6pU3FitB/4N0QrxGPhZJHA/s+/HBO+td3WV5PgE7/9bs
-          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
-          KMEOF
-          mkdir -p app/src/main/res/xml
-          cat > app/src/main/res/xml/accessibility_service_config.xml <<'KMEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-              android:accessibilityEventTypes="typeWindowStateChanged"
-              android:accessibilityFeedbackType="feedbackGeneric"
-              android:canRetrieveWindowContent="false"
-              android:description="@string/acc_desc" />
-          KMEOF
-          cat > app/src/main/res/values/strings.xml <<'KMEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="acc_desc">تەنها بۆ نیشاندانی وەرگێڕانەکە لەسەر شاشە بەکاردێت</string>
-          </resources>
-          KMEOF
-          mkdir -p app/src/main/java/com/kurdish/manhwareal
-          cat > app/src/main/java/com/kurdish/manhwareal/OverlayAccessibilityService.kt <<'KMEOF'
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Data.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/Data.kt <<'KMEOF'
           package com.kurdish.manhwareal
 
-          import android.accessibilityservice.AccessibilityService
-          import android.content.Intent
-          import android.view.accessibility.AccessibilityEvent
+          import android.content.Context
+          import android.content.SharedPreferences
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.os.Handler
+          import android.os.Looper
+          import android.text.Html
+          import android.util.LruCache
+          import android.widget.ImageView
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.util.concurrent.Callable
+          import java.util.concurrent.ExecutorService
+          import java.util.concurrent.Executors
 
-          class OverlayAccessibilityService : AccessibilityService() {
-              override fun onServiceConnected() { instance = this }
-              override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-              override fun onInterrupt() {}
-              override fun onUnbind(intent: Intent?): Boolean {
-                  instance = null
-                  return super.onUnbind(intent)
+          private fun JSONObject.str(name: String): String = if (isNull(name)) "" else optString(name, "")
+
+          private fun JSONArray?.strings(): List<String> {
+              val out = ArrayList<String>()
+              if (this != null) {
+                  for (i in 0 until this.length()) out.add(this.optString(i, ""))
               }
+              return out
+          }
+
+          data class Manhwa(
+              val id: Int,
+              val title: String,
+              val altTitle: String,
+              val cover: String,
+              val score: Int,
+              val popularity: Int,
+              val genres: List<String>,
+              val tags: List<String>,
+              val description: String,
+              val chapters: Int,
+              val status: String,
+              val year: Int,
+              val url: String,
+              var reason: String = ""
+          ) {
+              fun toJson(): JSONObject {
+                  val o = JSONObject()
+                  o.put("id", id)
+                  o.put("title", title)
+                  o.put("alt", altTitle)
+                  o.put("cover", cover)
+                  o.put("score", score)
+                  o.put("pop", popularity)
+                  o.put("genres", JSONArray(genres))
+                  o.put("tags", JSONArray(tags))
+                  o.put("desc", description)
+                  o.put("ch", chapters)
+                  o.put("status", status)
+                  o.put("year", year)
+                  o.put("url", url)
+                  return o
+              }
+
               companion object {
-                  @Volatile var instance: OverlayAccessibilityService? = null
+                  fun fromJson(o: JSONObject): Manhwa = Manhwa(
+                      id = o.optInt("id"),
+                      title = o.str("title"),
+                      altTitle = o.str("alt"),
+                      cover = o.str("cover"),
+                      score = o.optInt("score"),
+                      popularity = o.optInt("pop"),
+                      genres = o.optJSONArray("genres").strings(),
+                      tags = o.optJSONArray("tags").strings(),
+                      description = o.str("desc"),
+                      chapters = o.optInt("ch"),
+                      status = o.str("status"),
+                      year = o.optInt("year"),
+                      url = o.str("url")
+                  )
+              }
+          }
+
+          /** پاشەکەوتکردنی دڵخوازەکان، شاردراوەکان و تامی بەکارهێنەر (فێربوونی ناوخۆیی) */
+          object Store {
+              private var sp: SharedPreferences? = null
+              private var savedCache: MutableList<Manhwa>? = null
+              private var tasteCache: MutableMap<String, Double>? = null
+
+              fun init(ctx: Context) {
+                  if (sp == null) sp = ctx.applicationContext.getSharedPreferences("kmr_prefs", Context.MODE_PRIVATE)
+              }
+
+              private fun p(): SharedPreferences = sp!!
+
+              var apiKey: String
+                  get() = p().getString("gemini_key", "") ?: ""
+                  set(v) { p().edit().putString("gemini_key", v.trim()).apply() }
+
+              var model: String
+                  get() = p().getString("gemini_model", "gemini-flash-latest") ?: "gemini-flash-latest"
+                  set(v) { p().edit().putString("gemini_model", v.trim().ifEmpty { "gemini-flash-latest" }).apply() }
+
+              fun saved(): MutableList<Manhwa> {
+                  savedCache?.let { return it }
+                  val list = ArrayList<Manhwa>()
+                  try {
+                      val arr = JSONArray(p().getString("saved", "[]"))
+                      for (i in 0 until arr.length()) list.add(Manhwa.fromJson(arr.getJSONObject(i)))
+                  } catch (_: Exception) { }
+                  savedCache = list
+                  return list
+              }
+
+              private fun writeSaved(list: List<Manhwa>) {
+                  val arr = JSONArray()
+                  for (m in list) arr.put(m.toJson())
+                  p().edit().putString("saved", arr.toString()).apply()
+              }
+
+              fun isSaved(id: Int): Boolean = saved().any { it.id == id }
+
+              /** true = زیادکرا، false = لابرا */
+              fun toggleSave(m: Manhwa): Boolean {
+                  val list = saved()
+                  val idx = list.indexOfFirst { it.id == m.id }
+                  return if (idx >= 0) {
+                      list.removeAt(idx)
+                      writeSaved(list)
+                      addTaste(m, -1.0)
+                      false
+                  } else {
+                      list.add(0, m)
+                      writeSaved(list)
+                      addTaste(m, 1.0)
+                      true
+                  }
+              }
+
+              fun hiddenIds(): Set<Int> {
+                  val s = p().getStringSet("hid_ids", emptySet()) ?: emptySet()
+                  return s.mapNotNull { it.toIntOrNull() }.toSet()
+              }
+
+              fun hiddenTitles(): List<String> {
+                  val s = p().getStringSet("hid_titles", emptySet()) ?: emptySet()
+                  return s.toList().takeLast(15)
+              }
+
+              fun hide(m: Manhwa) {
+                  val ids = HashSet<String>(p().getStringSet("hid_ids", emptySet()) ?: emptySet())
+                  ids.add(m.id.toString())
+                  val titles = HashSet<String>(p().getStringSet("hid_titles", emptySet()) ?: emptySet())
+                  titles.add(m.title)
+                  p().edit().putStringSet("hid_ids", ids).putStringSet("hid_titles", titles).apply()
+                  addTaste(m, -1.0)
+              }
+
+              private fun tasteMap(): MutableMap<String, Double> {
+                  tasteCache?.let { return it }
+                  val map = HashMap<String, Double>()
+                  try {
+                      val o = JSONObject(p().getString("taste", "{}"))
+                      val keys = o.keys()
+                      while (keys.hasNext()) {
+                          val k = keys.next()
+                          map[k] = o.optDouble(k, 0.0)
+                      }
+                  } catch (_: Exception) { }
+                  tasteCache = map
+                  return map
+              }
+
+              private fun addTaste(m: Manhwa, d: Double) {
+                  val t = tasteMap()
+                  for (g in m.genres) t[g] = (t[g] ?: 0.0) + d
+                  for (g in m.tags.take(8)) t["#" + g] = (t["#" + g] ?: 0.0) + d * 0.5
+                  val o = JSONObject()
+                  for ((k, v) in t) o.put(k, v)
+                  p().edit().putString("taste", o.toString()).apply()
+              }
+
+              fun affinity(m: Manhwa): Double {
+                  val t = tasteMap()
+                  var s = 0.0
+                  for (g in m.genres) s += (t[g] ?: 0.0)
+                  for (g in m.tags) s += 0.5 * (t["#" + g] ?: 0.0)
+                  return s
+              }
+
+              fun affinityNorm(m: Manhwa): Double = affinity(m) / maxOf(1.0, m.genres.size + 0.5 * m.tags.size)
+
+              fun hasTaste(): Boolean = tasteMap().values.any { it > 0.5 }
+
+              fun topTasteGenres(n: Int): List<String> =
+                  tasteMap().entries
+                      .filter { !it.key.startsWith("#") && it.value > 0.5 }
+                      .sortedByDescending { it.value }
+                      .take(n)
+                      .map { it.key }
+          }
+
+          /** تۆڕ: AniList (مانهواکان)، Gemini (AI)، وەرگێڕان، وێنەکان */
+          object Net {
+              val io: ExecutorService = Executors.newFixedThreadPool(6)
+              val ui = Handler(Looper.getMainLooper())
+
+              private val cache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
+                  override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+              }
+
+              private const val FIELDS =
+                  "id title{romaji english native} coverImage{large} averageScore popularity genres tags{name rank} " +
+                      "description(asHtml:false) chapters status startDate{year} siteUrl countryOfOrigin isAdult"
+
+              // @ دەگۆڕدرێت بە $ (بۆ ڕێگری لە تێکچوونی Kotlin string)
+              private val Q_PAGE = (
+                  "query(@page:Int,@perPage:Int,@sort:[MediaSort],@genres:[String],@search:String,@status:MediaStatus,@minScore:Int,@minPop:Int){" +
+                      "Page(page:@page,perPage:@perPage){media(type:MANGA,countryOfOrigin:\"KR\",isAdult:false,sort:@sort,genre_in:@genres," +
+                      "search:@search,status:@status,averageScore_greater:@minScore,popularity_greater:@minPop){" + FIELDS + "}}}"
+                  ).replace('@', '$')
+
+              private val Q_SIMILAR = (
+                  "query(@id:Int){Media(id:@id){recommendations(sort:RATING_DESC,perPage:20){nodes{mediaRecommendation{" + FIELDS + "}}}}}"
+                  ).replace('@', '$')
+
+              fun <T> async(work: () -> T, ok: (T) -> Unit, fail: (String) -> Unit = {}) {
+                  io.execute {
+                      try {
+                          val r = work()
+                          ui.post { ok(r) }
+                      } catch (e: Exception) {
+                          val msg = e.message ?: "هەڵە"
+                          ui.post { fail(msg) }
+                      }
+                  }
+              }
+
+              fun httpPost(url: String, body: String, headers: Map<String, String>): String {
+                  val conn = URL(url).openConnection() as HttpURLConnection
+                  try {
+                      conn.requestMethod = "POST"
+                      conn.connectTimeout = 8000
+                      conn.readTimeout = 25000
+                      conn.doOutput = true
+                      for ((k, v) in headers) conn.setRequestProperty(k, v)
+                      conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                      val code = conn.responseCode
+                      val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                      val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                      if (code !in 200..299) throw Exception("HTTP " + code + ": " + text.take(160))
+                      return text
+                  } finally {
+                      conn.disconnect()
+                  }
+              }
+
+              private fun gql(query: String, vars: JSONObject): JSONObject {
+                  val body = JSONObject().put("query", query).put("variables", vars).toString()
+                  val resp = httpPost(
+                      "https://graphql.anilist.co", body,
+                      mapOf("Content-Type" to "application/json", "Accept" to "application/json")
+                  )
+                  val root = JSONObject(resp)
+                  if (root.isNull("data")) {
+                      val errs = root.optJSONArray("errors")
+                      val msg = errs?.optJSONObject(0)?.optString("message") ?: "AniList هەڵە"
+                      throw Exception(msg)
+                  }
+                  return root.getJSONObject("data")
+              }
+
+              private fun parse(o: JSONObject): Manhwa? {
+                  val country = o.str("countryOfOrigin")
+                  if (country.isNotEmpty() && country != "KR") return null
+                  if (o.optBoolean("isAdult", false)) return null
+                  val t = o.optJSONObject("title") ?: return null
+                  val en = t.str("english")
+                  val ro = t.str("romaji")
+                  val title = if (en.isNotBlank()) en else ro
+                  if (title.isBlank()) return null
+                  val alt = if (ro.isNotBlank() && ro != title) ro else t.str("native")
+                  val cover = o.optJSONObject("coverImage")?.str("large") ?: ""
+                  val tags = ArrayList<String>()
+                  val tagArr = o.optJSONArray("tags")
+                  if (tagArr != null) {
+                      for (i in 0 until tagArr.length()) {
+                          val tg = tagArr.optJSONObject(i) ?: continue
+                          if (tg.optInt("rank") >= 50) tags.add(tg.str("name"))
+                      }
+                  }
+                  val rawDesc = o.str("description")
+                  val desc = if (rawDesc.isBlank()) "" else Html.fromHtml(rawDesc, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                  return Manhwa(
+                      id = o.optInt("id"),
+                      title = title,
+                      altTitle = alt,
+                      cover = cover,
+                      score = o.optInt("averageScore"),
+                      popularity = o.optInt("popularity"),
+                      genres = o.optJSONArray("genres").strings(),
+                      tags = tags,
+                      description = desc,
+                      chapters = o.optInt("chapters"),
+                      status = o.str("status"),
+                      year = o.optJSONObject("startDate")?.optInt("year") ?: 0,
+                      url = o.str("siteUrl")
+                  )
+              }
+
+              fun discover(
+                  sort: String, genres: List<String>, search: String, status: String,
+                  page: Int, perPage: Int, minScore: Int, minPop: Int
+              ): List<Manhwa> {
+                  val v = JSONObject()
+                  v.put("page", page)
+                  v.put("perPage", perPage)
+                  v.put("sort", JSONArray().put(sort))
+                  if (genres.isNotEmpty()) v.put("genres", JSONArray(genres))
+                  if (search.isNotBlank()) v.put("search", search)
+                  if (status.isNotBlank()) v.put("status", status)
+                  if (minScore > 0) v.put("minScore", minScore)
+                  if (minPop > 0) v.put("minPop", minPop)
+                  val media = gql(Q_PAGE, v).getJSONObject("Page").getJSONArray("media")
+                  val out = ArrayList<Manhwa>()
+                  for (i in 0 until media.length()) {
+                      val m = parse(media.getJSONObject(i)) ?: continue
+                      out.add(m)
+                  }
+                  return out
+              }
+
+              fun findByTitle(title: String): Manhwa? =
+                  discover("SEARCH_MATCH", emptyList(), title, "", 1, 3, 0, 0).firstOrNull()
+
+              fun similar(id: Int): List<Manhwa> {
+                  val v = JSONObject().put("id", id)
+                  val nodes = gql(Q_SIMILAR, v).getJSONObject("Media").getJSONObject("recommendations").getJSONArray("nodes")
+                  val out = ArrayList<Manhwa>()
+                  for (i in 0 until nodes.length()) {
+                      val n = nodes.optJSONObject(i) ?: continue
+                      val mr = n.optJSONObject("mediaRecommendation") ?: continue
+                      val m = parse(mr) ?: continue
+                      out.add(m)
+                  }
+                  return out
+              }
+
+              /** AI: Gemini پێشنیار دەکات، پاشان لە AniList دەیاندۆزینەوە */
+              fun recommend(request: String): List<Manhwa> {
+                  val key = Store.apiKey
+                  if (key.isBlank()) throw Exception("کلیلی AI دانەنراوە")
+                  val liked = Store.saved().take(12).map { it.title }
+                  val avoid = Store.hiddenTitles()
+                  val prompt = "You are an expert on Korean manhwa and webtoons. The user describes what they want to read " +
+                      "(the request may be in Kurdish, Arabic, English or any other language). " +
+                      "Recommend 8 real, well-regarded manhwa that fit best, best match first. " +
+                      "Use the exact English or romanized title as listed on AniList.\n" +
+                      "User request: \"" + request + "\"\n" +
+                      "Titles the user already likes (match this taste): " + liked.joinToString("; ") + "\n" +
+                      "Titles to avoid: " + avoid.joinToString("; ") + "\n" +
+                      "Return ONLY a JSON array, no other text: " +
+                      "[{\"title\":\"...\",\"reason\":\"one short sentence in Kurdish Sorani (Arabic script) on why it fits\"}]"
+
+                  val part = JSONObject().put("text", prompt)
+                  val content = JSONObject().put("parts", JSONArray().put(part))
+                  val body = JSONObject()
+                      .put("contents", JSONArray().put(content))
+                      .put("generationConfig", JSONObject().put("temperature", 0.8).put("responseMimeType", "application/json"))
+
+                  val resp = httpPost(
+                      "https://generativelanguage.googleapis.com/v1beta/models/" + Store.model + ":generateContent",
+                      body.toString(),
+                      mapOf("Content-Type" to "application/json", "x-goog-api-key" to key)
+                  )
+                  val text = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
+                      .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                  val startIdx = text.indexOf('[')
+                  val endIdx = text.lastIndexOf(']')
+                  if (startIdx < 0 || endIdx <= startIdx) throw Exception("وەڵامی AI تێنەگەیشتم")
+                  val arr = JSONArray(text.substring(startIdx, endIdx + 1))
+
+                  val wanted = ArrayList<Pair<String, String>>()
+                  for (i in 0 until arr.length()) {
+                      val o = arr.optJSONObject(i) ?: continue
+                      val t = o.str("title")
+                      if (t.isNotBlank()) wanted.add(Pair(t, o.str("reason")))
+                  }
+
+                  val futures = wanted.map { w ->
+                      io.submit(Callable<Manhwa?> {
+                          try { findByTitle(w.first) } catch (ex: Exception) { null }
+                      })
+                  }
+                  val out = ArrayList<Manhwa>()
+                  val seen = HashSet<Int>()
+                  for ((i, f) in futures.withIndex()) {
+                      val m: Manhwa? = try { f.get() } catch (ex: Exception) { null }
+                      if (m != null && seen.add(m.id)) {
+                          m.reason = wanted[i].second
+                          out.add(m)
+                      }
+                  }
+                  return out
+              }
+
+              private fun translateChunk(text: String): String {
+                  val urlString = "https://translate.googleapis.com/translate_a/single" +
+                      "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text, "UTF-8")
+                  val conn = URL(urlString).openConnection() as HttpURLConnection
+                  conn.connectTimeout = 6000
+                  conn.readTimeout = 8000
+                  conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                  val response = conn.inputStream.bufferedReader().use { it.readText() }
+                  val sub = JSONArray(response).getJSONArray(0)
+                  val sb = StringBuilder()
+                  for (i in 0 until sub.length()) sb.append(sub.getJSONArray(i).optString(0, ""))
+                  return sb.toString().trim()
+              }
+
+              /** وەرگێڕانی دەقی درێژ بۆ کوردی سۆرانی (پارچە پارچە) */
+              fun translateKu(text: String): String {
+                  val parts = ArrayList<String>()
+                  var cur = StringBuilder()
+                  for (s in text.split(Regex("(?<=[.!?])\\s+"))) {
+                      if (cur.isNotEmpty() && cur.length + s.length > 450) {
+                          parts.add(cur.toString())
+                          cur = StringBuilder()
+                      }
+                      cur.append(s).append(' ')
+                  }
+                  if (cur.isNotBlank()) parts.add(cur.toString())
+                  val futures = parts.map { c -> io.submit(Callable<String> { translateChunk(c) }) }
+                  return futures.joinToString(" ") { it.get() }
+              }
+
+              fun loadImage(url: String, iv: ImageView) {
+                  iv.tag = url
+                  if (url.isBlank()) {
+                      iv.setImageDrawable(null)
+                      return
+                  }
+                  val c = cache.get(url)
+                  if (c != null) {
+                      iv.setImageBitmap(c)
+                      return
+                  }
+                  iv.setImageDrawable(null)
+                  io.execute {
+                      try {
+                          val conn = URL(url).openConnection() as HttpURLConnection
+                          conn.connectTimeout = 8000
+                          conn.readTimeout = 8000
+                          val bmp = conn.inputStream.use { BitmapFactory.decodeStream(it) }
+                          if (bmp != null) {
+                              cache.put(url, bmp)
+                              ui.post { if (iv.tag == url) iv.setImageBitmap(bmp) }
+                          }
+                      } catch (_: Exception) { }
+                  }
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Ui.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/Ui.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.content.Context
+          import android.graphics.Color
+          import android.graphics.Outline
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.ViewOutlineProvider
+          import android.widget.EditText
+          import android.widget.FrameLayout
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.recyclerview.widget.RecyclerView
+
+          object Ui {
+              val BG = 0xFF0B0F1A.toInt()
+              val SURFACE = 0xFF141B2D.toInt()
+              val SURFACE2 = 0xFF1C2540.toInt()
+              val ACCENT = 0xFF7C5CFF.toInt()
+              val ACCENT2 = 0xFF22D3EE.toInt()
+              val TEXT = 0xFFE8ECF8.toInt()
+              val MUTED = 0xFF8A94B2.toInt()
+              val HEART = 0xFFFB7185.toInt()
+
+              fun dp(c: Context, v: Int): Int = (v * c.resources.displayMetrics.density).toInt()
+
+              fun round(c: Context, color: Int, radiusDp: Int): GradientDrawable {
+                  val g = GradientDrawable()
+                  g.setColor(color)
+                  g.cornerRadius = dp(c, radiusDp).toFloat()
+                  return g
+              }
+
+              fun grad(c: Context, a: Int, b: Int, radiusDp: Int): GradientDrawable {
+                  val g = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(a, b))
+                  g.cornerRadius = dp(c, radiusDp).toFloat()
+                  return g
+              }
+
+              fun clipRound(v: View, radiusDp: Int) {
+                  val r = dp(v.context, radiusDp).toFloat()
+                  v.clipToOutline = true
+                  v.outlineProvider = object : ViewOutlineProvider() {
+                      override fun getOutline(view: View, outline: Outline) {
+                          outline.setRoundRect(0, 0, view.width, view.height, r)
+                      }
+                  }
+              }
+
+              fun tv(c: Context, text: String, sp: Float, color: Int, bold: Boolean = false): TextView {
+                  val t = TextView(c)
+                  t.text = text
+                  t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+                  t.setTextColor(color)
+                  if (bold) t.typeface = Typeface.DEFAULT_BOLD
+                  return t
+              }
+
+              fun button(c: Context, text: String, filled: Boolean, onClick: (() -> Unit)? = null): TextView {
+                  val b = tv(c, text, 14f, if (filled) Color.WHITE else TEXT, true)
+                  b.gravity = Gravity.CENTER
+                  b.setPadding(dp(c, 16), dp(c, 10), dp(c, 16), dp(c, 10))
+                  b.background = if (filled) grad(c, ACCENT, ACCENT2, 14) else round(c, SURFACE2, 14)
+                  if (onClick != null) b.setOnClickListener { onClick() }
+                  return b
+              }
+
+              fun edit(c: Context, hint: String): EditText {
+                  val e = EditText(c)
+                  e.hint = hint
+                  e.setHintTextColor(MUTED)
+                  e.setTextColor(TEXT)
+                  e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                  e.background = round(c, SURFACE2, 14)
+                  e.setPadding(dp(c, 14), dp(c, 12), dp(c, 14), dp(c, 12))
+                  return e
+              }
+
+              fun statusKu(s: String): String = when (s) {
+                  "RELEASING" -> "بەردەوامە"
+                  "FINISHED" -> "تەواوبووە"
+                  "HIATUS" -> "وەستاوە"
+                  "CANCELLED" -> "هەڵوەشاوەتەوە"
+                  "NOT_YET_RELEASED" -> "هێشتا نەهاتووە"
+                  else -> ""
+              }
+          }
+
+          class CardAdapter(
+              private val ctx: Context,
+              val items: MutableList<Manhwa>,
+              private val showHide: Boolean,
+              private val onOpen: (Manhwa) -> Unit,
+              private val onHeart: (Manhwa) -> Unit,
+              private val onHide: (Manhwa) -> Unit
+          ) : RecyclerView.Adapter<CardAdapter.VH>() {
+
+              class VH(
+                  v: View,
+                  val cover: ImageView,
+                  val title: TextView,
+                  val meta: TextView,
+                  val reason: TextView,
+                  val score: TextView,
+                  val heart: TextView,
+                  val hide: TextView
+              ) : RecyclerView.ViewHolder(v)
+
+              override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+                  val card = LinearLayout(ctx)
+                  card.orientation = LinearLayout.VERTICAL
+                  card.background = Ui.round(ctx, Ui.SURFACE, 16)
+                  Ui.clipRound(card, 16)
+                  val lp = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                  val m = Ui.dp(ctx, 6)
+                  lp.setMargins(m, m, m, m)
+                  card.layoutParams = lp
+
+                  val frame = FrameLayout(ctx)
+                  val cover = ImageView(ctx)
+                  cover.scaleType = ImageView.ScaleType.CENTER_CROP
+                  cover.setBackgroundColor(Ui.SURFACE2)
+                  frame.addView(cover, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 230)))
+
+                  val score = Ui.tv(ctx, "", 12f, Color.WHITE, true)
+                  score.background = Ui.round(ctx, 0xCC000000.toInt(), 10)
+                  score.setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 3), Ui.dp(ctx, 8), Ui.dp(ctx, 3))
+                  val slp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START)
+                  slp.setMargins(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
+                  frame.addView(score, slp)
+
+                  val heart = Ui.tv(ctx, "♡", 18f, Color.WHITE, true)
+                  heart.gravity = Gravity.CENTER
+                  heart.background = Ui.round(ctx, 0xCC000000.toInt(), 18)
+                  val hlp = FrameLayout.LayoutParams(Ui.dp(ctx, 36), Ui.dp(ctx, 36), Gravity.TOP or Gravity.END)
+                  hlp.setMargins(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
+                  frame.addView(heart, hlp)
+
+                  val hide = Ui.tv(ctx, "✕", 14f, Color.WHITE, true)
+                  hide.gravity = Gravity.CENTER
+                  hide.background = Ui.round(ctx, 0xCC000000.toInt(), 16)
+                  val xlp = FrameLayout.LayoutParams(Ui.dp(ctx, 32), Ui.dp(ctx, 32), Gravity.BOTTOM or Gravity.END)
+                  xlp.setMargins(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
+                  frame.addView(hide, xlp)
+                  hide.visibility = if (showHide) View.VISIBLE else View.GONE
+
+                  card.addView(frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+                  val info = LinearLayout(ctx)
+                  info.orientation = LinearLayout.VERTICAL
+                  info.setPadding(Ui.dp(ctx, 10), Ui.dp(ctx, 8), Ui.dp(ctx, 10), Ui.dp(ctx, 10))
+                  val title = Ui.tv(ctx, "", 14f, Ui.TEXT, true)
+                  title.maxLines = 2
+                  val meta = Ui.tv(ctx, "", 11f, Ui.MUTED)
+                  meta.maxLines = 1
+                  val reason = Ui.tv(ctx, "", 11f, Ui.ACCENT2)
+                  reason.maxLines = 4
+                  reason.setPadding(0, Ui.dp(ctx, 4), 0, 0)
+                  info.addView(title)
+                  info.addView(meta)
+                  info.addView(reason)
+                  card.addView(info, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+                  val vh = VH(card, cover, title, meta, reason, score, heart, hide)
+                  card.setOnClickListener {
+                      val p = vh.bindingAdapterPosition
+                      if (p != RecyclerView.NO_POSITION) onOpen(items[p])
+                  }
+                  heart.setOnClickListener {
+                      val p = vh.bindingAdapterPosition
+                      if (p != RecyclerView.NO_POSITION) onHeart(items[p])
+                  }
+                  hide.setOnClickListener {
+                      val p = vh.bindingAdapterPosition
+                      if (p != RecyclerView.NO_POSITION) onHide(items[p])
+                  }
+                  return vh
+              }
+
+              override fun getItemCount(): Int = items.size
+
+              override fun onBindViewHolder(h: VH, position: Int) {
+                  val m = items[position]
+                  Net.loadImage(m.cover, h.cover)
+                  h.title.text = m.title
+                  h.meta.text = m.genres.take(3).joinToString(" · ")
+                  h.score.text = if (m.score > 0) "★ " + (m.score / 10.0) else "★ -"
+                  val saved = Store.isSaved(m.id)
+                  h.heart.text = if (saved) "♥" else "♡"
+                  h.heart.setTextColor(if (saved) Ui.HEART else Color.WHITE)
+                  if (m.reason.isBlank()) {
+                      h.reason.visibility = View.GONE
+                  } else {
+                      h.reason.visibility = View.VISIBLE
+                      h.reason.text = "✦ " + m.reason
+                  }
               }
           }
           KMEOF
@@ -541,81 +833,765 @@ jobs:
           import android.content.Context
           import android.content.Intent
           import android.content.pm.PackageManager
-          import android.content.res.ColorStateList
           import android.graphics.Color
+          import android.graphics.drawable.ColorDrawable
           import android.media.projection.MediaProjectionManager
           import android.net.Uri
           import android.os.Build
           import android.os.Bundle
           import android.provider.Settings
-          import android.widget.Button
+          import android.text.InputType
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.inputmethod.EditorInfo
+          import android.view.inputmethod.InputMethodManager
+          import android.widget.EditText
+          import android.widget.FrameLayout
+          import android.widget.HorizontalScrollView
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
           import android.widget.Toast
           import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.appcompat.app.AlertDialog
           import androidx.appcompat.app.AppCompatActivity
           import androidx.core.content.ContextCompat
+          import androidx.recyclerview.widget.GridLayoutManager
+          import androidx.recyclerview.widget.RecyclerView
+
+          private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+          private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 
           class MainActivity : AppCompatActivity() {
 
-              private lateinit var projectionManager: MediaProjectionManager
-              private lateinit var btnToggle: Button
-              private var isServiceRunning = false
+              private lateinit var discoverPage: LinearLayout
+              private lateinit var translatePage: ScrollView
+              private lateinit var savedPage: LinearLayout
+              private val navItems = ArrayList<LinearLayout>()
+
+              private lateinit var discoverAdapter: CardAdapter
+              private lateinit var savedAdapter: CardAdapter
+              private lateinit var discoverRv: RecyclerView
+              private lateinit var statusTv: TextView
+              private lateinit var searchEt: EditText
+              private lateinit var savedEmpty: TextView
+              private lateinit var startBtn: TextView
+              private lateinit var translateStatus: TextView
+
+              private val modeChips = ArrayList<TextView>()
+              private val genreChips = HashMap<String, TextView>()
+              private val selectedGenres = LinkedHashSet<String>()
+
+              private var mode = 0
+              private var page = 1
+              private var loading = false
+              private var hasMore = true
+              private var customList = false
+              private var requestToken = 0
+
+              private val modeNames = listOf("✦ بۆ تۆ", "باشترینەکان", "ترێندی ئێستا", "بەردەوامەکان")
+              private val genreList = listOf(
+                  "Action" to "ئاکشن", "Fantasy" to "فانتازیا", "Romance" to "ڕۆمانسی", "Comedy" to "کۆمیدی",
+                  "Drama" to "دراما", "Adventure" to "سەرکێشی", "Supernatural" to "سروشتبەدەر", "Mystery" to "نهێنی",
+                  "Psychological" to "دەروونی", "Thriller" to "هەیجان", "Horror" to "ترسناک",
+                  "Sci-Fi" to "زانستی خەیاڵی", "Slice of Life" to "ژیانی ڕۆژانە", "Sports" to "وەرزش"
+              )
 
               private val notificationPermission =
-                  registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* بەردەوام دەبین، پێویست بە وەڵام نییە */ }
+                  registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
               private val captureLauncher =
                   registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
                       val data = result.data
                       if (result.resultCode == Activity.RESULT_OK && data != null) {
-                          val serviceIntent = Intent(this, KurdishRealTimeTranslatorService::class.java).apply {
-                              putExtra("RESULT_CODE", result.resultCode)
-                              putExtra("DATA_INTENT", data)
-                          }
+                          val serviceIntent = Intent(this, KurdishRealTimeTranslatorService::class.java)
+                          serviceIntent.putExtra("RESULT_CODE", result.resultCode)
+                          serviceIntent.putExtra("DATA_INTENT", data)
                           ContextCompat.startForegroundService(this, serviceIntent)
-                          setRunningUi(true)
                           Toast.makeText(this, "ئێستا بڕۆ ناو مانگاکەت، خۆکارانە وەردەگێڕدرێت!", Toast.LENGTH_LONG).show()
+                          Net.ui.postDelayed({ refreshTranslateUi() }, 700)
                           moveTaskToBack(true)
                       }
                   }
 
+              private fun dp(v: Int): Int = Ui.dp(this, v)
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  setContentView(R.layout.activity_main)
+                  Store.init(this)
+                  window.setBackgroundDrawable(ColorDrawable(Ui.BG))
+                  window.statusBarColor = Ui.BG
+                  window.navigationBarColor = Ui.SURFACE
 
-                  projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                  btnToggle = findViewById(R.id.btnToggleService)
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.setBackgroundColor(Ui.BG)
+                  root.layoutDirection = View.LAYOUT_DIRECTION_RTL
+
+                  val pages = FrameLayout(this)
+                  root.addView(pages, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+                  discoverPage = buildDiscover()
+                  translatePage = buildTranslate()
+                  savedPage = buildSaved()
+                  pages.addView(discoverPage, FrameLayout.LayoutParams(MATCH, MATCH))
+                  pages.addView(translatePage, FrameLayout.LayoutParams(MATCH, MATCH))
+                  pages.addView(savedPage, FrameLayout.LayoutParams(MATCH, MATCH))
+
+                  root.addView(buildNav(), LinearLayout.LayoutParams(MATCH, WRAP))
+                  setContentView(root)
 
                   if (Build.VERSION.SDK_INT >= 33 &&
-                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                      != PackageManager.PERMISSION_GRANTED
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                   ) {
                       notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                   }
 
-                  btnToggle.setOnClickListener {
-                      if (!isServiceRunning) {
-                          if (OverlayAccessibilityService.instance == null) {
-                              Toast.makeText(this, "Accessibility ی Kurdish Manhwa Real چالاک بکە، پاشان دووبارە دوگمەکە بدە", Toast.LENGTH_LONG).show()
-                              startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                              return@setOnClickListener
-                          }
-                          captureLauncher.launch(projectionManager.createScreenCaptureIntent())
+                  selectTab(0)
+                  styleModeChips()
+                  reload()
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  refreshTranslateUi()
+              }
+
+              // ---------------- ناڤیگەیشن ----------------
+
+              private fun buildNav(): LinearLayout {
+                  val nav = LinearLayout(this)
+                  nav.orientation = LinearLayout.HORIZONTAL
+                  nav.setBackgroundColor(Ui.SURFACE)
+                  nav.setPadding(0, dp(6), 0, dp(6))
+                  val labels = listOf("✦" to "دۆزینەوە", "◉" to "وەرگێڕان", "♥" to "پاشەکەوت")
+                  for ((i, pair) in labels.withIndex()) {
+                      val item = LinearLayout(this)
+                      item.orientation = LinearLayout.VERTICAL
+                      item.gravity = Gravity.CENTER
+                      item.setPadding(0, dp(4), 0, dp(4))
+                      val icon = Ui.tv(this, pair.first, 20f, Ui.MUTED, true)
+                      icon.gravity = Gravity.CENTER
+                      val label = Ui.tv(this, pair.second, 11f, Ui.MUTED, true)
+                      label.gravity = Gravity.CENTER
+                      item.addView(icon, LinearLayout.LayoutParams(WRAP, WRAP))
+                      item.addView(label, LinearLayout.LayoutParams(WRAP, WRAP))
+                      item.setOnClickListener { selectTab(i) }
+                      nav.addView(item, LinearLayout.LayoutParams(0, WRAP, 1f))
+                      navItems.add(item)
+                  }
+                  return nav
+              }
+
+              private fun selectTab(i: Int) {
+                  discoverPage.visibility = if (i == 0) View.VISIBLE else View.GONE
+                  translatePage.visibility = if (i == 1) View.VISIBLE else View.GONE
+                  savedPage.visibility = if (i == 2) View.VISIBLE else View.GONE
+                  for ((idx, item) in navItems.withIndex()) {
+                      val color = if (idx == i) Ui.ACCENT2 else Ui.MUTED
+                      for (k in 0 until item.childCount) (item.getChildAt(k) as TextView).setTextColor(color)
+                  }
+                  if (i == 2) refreshSaved()
+                  if (i == 1) refreshTranslateUi()
+              }
+
+              private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+              private fun hideKeyboard() {
+                  val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                  imm.hideSoftInputFromWindow(searchEt.windowToken, 0)
+              }
+
+              // ---------------- پەڕەی دۆزینەوە ----------------
+
+              private fun pill(text: String): TextView {
+                  val t = Ui.tv(this, text, 13f, Ui.MUTED, true)
+                  t.setPadding(dp(14), dp(8), dp(14), dp(8))
+                  t.background = Ui.round(this, Ui.SURFACE2, 20)
+                  return t
+              }
+
+              private fun stylePill(t: TextView, selected: Boolean) {
+                  t.setTextColor(if (selected) Color.WHITE else Ui.MUTED)
+                  t.background = if (selected) Ui.grad(this, Ui.ACCENT, Ui.ACCENT2, 20) else Ui.round(this, Ui.SURFACE2, 20)
+              }
+
+              private fun styleModeChips() {
+                  for ((i, t) in modeChips.withIndex()) stylePill(t, i == mode)
+              }
+
+              private fun buildDiscover(): LinearLayout {
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+
+                  // سەردێڕ
+                  val header = LinearLayout(this)
+                  header.orientation = LinearLayout.HORIZONTAL
+                  header.gravity = Gravity.CENTER_VERTICAL
+                  header.setPadding(dp(16), dp(12), dp(16), dp(6))
+                  val logo = ImageView(this)
+                  logo.setImageResource(R.drawable.ic_launcher_foreground)
+                  header.addView(logo, LinearLayout.LayoutParams(dp(52), dp(52)))
+                  val titles = LinearLayout(this)
+                  titles.orientation = LinearLayout.VERTICAL
+                  titles.addView(Ui.tv(this, "دۆزینەوەی مانهوا", 20f, Ui.TEXT, true))
+                  titles.addView(Ui.tv(this, "AI ـی خۆت بۆ باشترین مانهواکان", 12f, Ui.MUTED))
+                  val tlp = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  tlp.marginStart = dp(10)
+                  header.addView(titles, tlp)
+                  header.addView(Ui.button(this, "✦ AI", true) { showAiDialog() }, LinearLayout.LayoutParams(WRAP, WRAP))
+                  col.addView(header, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  // گەڕان
+                  val searchRow = LinearLayout(this)
+                  searchRow.orientation = LinearLayout.HORIZONTAL
+                  searchRow.setPadding(dp(16), dp(4), dp(16), dp(4))
+                  searchEt = Ui.edit(this, "ناوی مانهوایەک بگەڕێ...")
+                  searchEt.isSingleLine = true
+                  searchEt.imeOptions = EditorInfo.IME_ACTION_SEARCH
+                  searchEt.setOnEditorActionListener { _, actionId, _ ->
+                      if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                          hideKeyboard()
+                          reload()
+                          true
                       } else {
-                          stopService(Intent(this, KurdishRealTimeTranslatorService::class.java))
-                          setRunningUi(false)
+                          false
                       }
+                  }
+                  searchRow.addView(searchEt, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  val goBtn = Ui.button(this, "گەڕان", false) {
+                      hideKeyboard()
+                      reload()
+                  }
+                  val glp = LinearLayout.LayoutParams(WRAP, WRAP)
+                  glp.marginStart = dp(8)
+                  searchRow.addView(goBtn, glp)
+                  col.addView(searchRow, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  // شێوازەکان
+                  val modeScroll = HorizontalScrollView(this)
+                  modeScroll.isHorizontalScrollBarEnabled = false
+                  val modeRow = LinearLayout(this)
+                  modeRow.orientation = LinearLayout.HORIZONTAL
+                  modeRow.setPadding(dp(16), dp(6), dp(16), dp(2))
+                  for ((i, name) in modeNames.withIndex()) {
+                      val chip = pill(name)
+                      chip.setOnClickListener {
+                          mode = i
+                          searchEt.setText("")
+                          styleModeChips()
+                          reload()
+                      }
+                      val lp = LinearLayout.LayoutParams(WRAP, WRAP)
+                      lp.marginEnd = dp(8)
+                      modeRow.addView(chip, lp)
+                      modeChips.add(chip)
+                  }
+                  modeScroll.addView(modeRow)
+                  col.addView(modeScroll, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  // ژانرەکان
+                  val genreScroll = HorizontalScrollView(this)
+                  genreScroll.isHorizontalScrollBarEnabled = false
+                  val genreRow = LinearLayout(this)
+                  genreRow.orientation = LinearLayout.HORIZONTAL
+                  genreRow.setPadding(dp(16), dp(6), dp(16), dp(6))
+                  for (g in genreList) {
+                      val chip = pill(g.second)
+                      chip.textSize = 12f
+                      chip.setOnClickListener {
+                          if (selectedGenres.contains(g.first)) selectedGenres.remove(g.first) else selectedGenres.add(g.first)
+                          stylePill(chip, selectedGenres.contains(g.first))
+                          reload()
+                      }
+                      val lp = LinearLayout.LayoutParams(WRAP, WRAP)
+                      lp.marginEnd = dp(8)
+                      genreRow.addView(chip, lp)
+                      genreChips[g.first] = chip
+                  }
+                  genreScroll.addView(genreRow)
+                  col.addView(genreScroll, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  statusTv = Ui.tv(this, "", 12f, Ui.MUTED)
+                  statusTv.setPadding(dp(18), dp(2), dp(18), dp(2))
+                  col.addView(statusTv, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  discoverRv = RecyclerView(this)
+                  discoverRv.layoutManager = GridLayoutManager(this, 2)
+                  discoverRv.clipToPadding = false
+                  discoverRv.setPadding(dp(6), dp(4), dp(6), dp(12))
+                  discoverAdapter = CardAdapter(this, ArrayList(), true,
+                      { m -> openDetail(m) }, { m -> onHeart(m) }, { m -> onHide(m) })
+                  discoverRv.adapter = discoverAdapter
+                  discoverRv.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                      override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                          if (dy > 0 && !loading && hasMore && !customList) {
+                              val lm = rv.layoutManager as GridLayoutManager
+                              if (lm.findLastVisibleItemPosition() >= discoverAdapter.itemCount - 4) loadPage()
+                          }
+                      }
+                  })
+                  col.addView(discoverRv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+                  return col
+              }
+
+              private fun reload() {
+                  requestToken++
+                  loading = false
+                  page = 1
+                  hasMore = true
+                  customList = false
+                  discoverAdapter.items.clear()
+                  discoverAdapter.notifyDataSetChanged()
+                  loadPage()
+              }
+
+              private fun fetch(q: String, genres: List<String>, md: Int, pg: Int): List<Manhwa> {
+                  if (q.isNotEmpty()) return Net.discover("SEARCH_MATCH", genres, q, "", pg, 24, 0, 0)
+                  return when (md) {
+                      0 -> {
+                          val g = if (genres.isNotEmpty()) genres else Store.topTasteGenres(3)
+                          val list = Net.discover("SCORE_DESC", g, "", "", pg, 40, 70, 4000)
+                          list.sortedByDescending { it.score / 100.0 + 0.15 * Store.affinityNorm(it) }
+                      }
+                      1 -> Net.discover("SCORE_DESC", genres, "", "", pg, 24, 75, 10000)
+                      2 -> Net.discover("TRENDING_DESC", genres, "", "", pg, 24, 0, 0)
+                      else -> Net.discover("POPULARITY_DESC", genres, "", "RELEASING", pg, 24, 0, 0)
                   }
               }
 
-              private fun setRunningUi(running: Boolean) {
-                  isServiceRunning = running
-                  if (running) {
-                      btnToggle.text = "وەرگێڕان چالاکە (بۆ وەستاندن لێرە بدە)"
-                      btnToggle.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#E53935"))
-                  } else {
-                      btnToggle.text = "چالاککردنی وەرگێڕانی کاتی ڕاستەقینە"
-                      btnToggle.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#1E88E5"))
+              private fun loadPage() {
+                  if (loading) return
+                  loading = true
+                  val token = requestToken
+                  val q = searchEt.text.toString().trim()
+                  val genres = selectedGenres.toList()
+                  val curPage = page
+                  val curMode = mode
+                  if (curPage == 1) statusTv.text = "لە دۆزینەوەدایە..."
+                  Net.async(
+                      { fetch(q, genres, curMode, curPage) },
+                      { list ->
+                          if (token == requestToken) {
+                              loading = false
+                              applyResults(list, curPage, curMode, q)
+                          }
+                      },
+                      { err ->
+                          if (token == requestToken) {
+                              loading = false
+                              statusTv.text = "هەڵە: " + err
+                          }
+                      }
+                  )
+              }
+
+              private fun applyResults(list: List<Manhwa>, pg: Int, md: Int, q: String) {
+                  val hidden = Store.hiddenIds()
+                  val existing = HashSet<Int>()
+                  for (it in discoverAdapter.items) existing.add(it.id)
+                  val add = list.filter { !hidden.contains(it.id) && !existing.contains(it.id) }
+                  val start = discoverAdapter.items.size
+                  discoverAdapter.items.addAll(add)
+                  discoverAdapter.notifyItemRangeInserted(start, add.size)
+                  hasMore = list.size >= 10
+                  page = pg + 1
+                  statusTv.text = when {
+                      discoverAdapter.items.isEmpty() -> "هیچ ئەنجامێک نەدۆزرایەوە"
+                      q.isEmpty() && md == 0 && !Store.hasTaste() -> "✦ چەند مانهوایەک پاشەکەوت بکە ♥ تا AI تامەکەت بناسێت"
+                      q.isEmpty() && md == 0 -> "✦ هەڵبژێردراوە بەپێی تامی تۆ"
+                      else -> discoverAdapter.items.size.toString() + " مانهوا"
                   }
+              }
+
+              private fun showCustom(list: List<Manhwa>, label: String) {
+                  requestToken++
+                  loading = false
+                  customList = true
+                  hasMore = false
+                  val hidden = Store.hiddenIds()
+                  discoverAdapter.items.clear()
+                  discoverAdapter.items.addAll(list.filter { !hidden.contains(it.id) })
+                  discoverAdapter.notifyDataSetChanged()
+                  statusTv.text = label
+                  selectTab(0)
+                  discoverRv.scrollToPosition(0)
+              }
+
+              private fun onHeart(m: Manhwa) {
+                  val now = Store.toggleSave(m)
+                  discoverAdapter.notifyDataSetChanged()
+                  refreshSaved()
+                  toast(if (now) "زیادکرا بۆ پاشەکەوتکراوەکان ♥" else "لابرا لە پاشەکەوتکراوەکان")
+              }
+
+              private fun onHide(m: Manhwa) {
+                  Store.hide(m)
+                  val i = discoverAdapter.items.indexOf(m)
+                  if (i >= 0) {
+                      discoverAdapter.items.removeAt(i)
+                      discoverAdapter.notifyItemRemoved(i)
+                  }
+                  toast("شاردرایەوە — AI تامەکەت فێر دەبێت")
+              }
+
+              // ---------------- وردەکاری ----------------
+
+              private fun openDetail(m: Manhwa) {
+                  val dlg = AlertDialog.Builder(this).create()
+                  val sv = ScrollView(this)
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  col.setPadding(dp(16), dp(16), dp(16), dp(16))
+                  col.background = Ui.round(this, Ui.SURFACE, 22)
+
+                  val top = LinearLayout(this)
+                  top.orientation = LinearLayout.HORIZONTAL
+                  val cover = ImageView(this)
+                  cover.scaleType = ImageView.ScaleType.CENTER_CROP
+                  cover.setBackgroundColor(Ui.SURFACE2)
+                  Ui.clipRound(cover, 14)
+                  Net.loadImage(m.cover, cover)
+                  top.addView(cover, LinearLayout.LayoutParams(dp(120), dp(176)))
+
+                  val info = LinearLayout(this)
+                  info.orientation = LinearLayout.VERTICAL
+                  info.setPaddingRelative(dp(12), 0, 0, 0)
+                  info.addView(Ui.tv(this, m.title, 18f, Ui.TEXT, true))
+                  if (m.altTitle.isNotBlank()) info.addView(Ui.tv(this, m.altTitle, 12f, Ui.MUTED))
+                  val meta = ArrayList<String>()
+                  if (m.score > 0) meta.add("★ " + (m.score / 10.0))
+                  if (m.chapters > 0) meta.add(m.chapters.toString() + " ئەڵقە")
+                  val st = Ui.statusKu(m.status)
+                  if (st.isNotEmpty()) meta.add(st)
+                  if (m.year > 0) meta.add(m.year.toString())
+                  val metaTv = Ui.tv(this, meta.joinToString(" · "), 12f, Ui.ACCENT2, true)
+                  metaTv.setPadding(0, dp(8), 0, 0)
+                  info.addView(metaTv)
+                  val gTv = Ui.tv(this, m.genres.joinToString(" · "), 12f, Ui.MUTED)
+                  gTv.setPadding(0, dp(6), 0, 0)
+                  info.addView(gTv)
+                  top.addView(info, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(top, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  if (m.reason.isNotBlank()) {
+                      val r = Ui.tv(this, "✦ AI: " + m.reason, 13f, Ui.ACCENT2, true)
+                      r.setPadding(0, dp(12), 0, 0)
+                      col.addView(r)
+                  }
+
+                  val desc = Ui.tv(this, if (m.description.isBlank()) "—" else m.description, 14f, Ui.TEXT)
+                  desc.setPadding(0, dp(14), 0, 0)
+                  desc.setLineSpacing(0f, 1.15f)
+                  col.addView(desc)
+
+                  val ku = Ui.tv(this, "", 14f, Ui.ACCENT2)
+                  ku.visibility = View.GONE
+                  ku.setPadding(0, dp(10), 0, 0)
+                  ku.setLineSpacing(0f, 1.15f)
+                  col.addView(ku)
+
+                  val row1 = LinearLayout(this)
+                  row1.orientation = LinearLayout.HORIZONTAL
+                  row1.setPadding(0, dp(14), 0, 0)
+                  val saveBtn = Ui.button(this, if (Store.isSaved(m.id)) "♥ لابردن" else "♡ پاشەکەوت", true)
+                  saveBtn.setOnClickListener {
+                      val now = Store.toggleSave(m)
+                      saveBtn.text = if (now) "♥ لابردن" else "♡ پاشەکەوت"
+                      discoverAdapter.notifyDataSetChanged()
+                      refreshSaved()
+                  }
+                  val trBtn = Ui.button(this, "وەرگێڕانی کورتە", false)
+                  trBtn.setOnClickListener {
+                      if (m.description.isBlank()) return@setOnClickListener
+                      ku.visibility = View.VISIBLE
+                      ku.text = "لە وەرگێڕاندایە..."
+                      Net.async(
+                          { Net.translateKu(m.description) },
+                          { s -> ku.text = s },
+                          { err -> ku.text = "نەتوانرا وەربگێڕدرێت: " + err }
+                      )
+                  }
+                  val lp1 = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  lp1.marginEnd = dp(8)
+                  row1.addView(saveBtn, lp1)
+                  row1.addView(trBtn, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row1, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val row2 = LinearLayout(this)
+                  row2.orientation = LinearLayout.HORIZONTAL
+                  row2.setPadding(0, dp(8), 0, 0)
+                  val simBtn = Ui.button(this, "✦ هاوشێوەکان", false)
+                  simBtn.setOnClickListener {
+                      dlg.dismiss()
+                      statusTv.text = "لە دۆزینەوەی هاوشێوەکان..."
+                      selectTab(0)
+                      Net.async(
+                          { Net.similar(m.id) },
+                          { list -> showCustom(list, "هاوشێوەی «" + m.title + "»") },
+                          { err -> statusTv.text = "هەڵە: " + err }
+                      )
+                  }
+                  val linkBtn = Ui.button(this, "AniList ↗", false)
+                  linkBtn.setOnClickListener {
+                      if (m.url.isNotBlank()) {
+                          try {
+                              startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(m.url)))
+                          } catch (_: Exception) { }
+                      }
+                  }
+                  val lp2 = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  lp2.marginEnd = dp(8)
+                  row2.addView(simBtn, lp2)
+                  row2.addView(linkBtn, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row2, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  sv.addView(col)
+                  dlg.setView(sv)
+                  dlg.show()
+                  dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                  dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.94).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+              }
+
+              // ---------------- AI ----------------
+
+              private fun showAiDialog() {
+                  val dlg = AlertDialog.Builder(this).create()
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  col.setPadding(dp(18), dp(18), dp(18), dp(18))
+                  col.background = Ui.round(this, Ui.SURFACE, 22)
+
+                  col.addView(Ui.tv(this, "✦ AI بۆ دۆزینەوەی مانهوا", 18f, Ui.TEXT, true))
+                  val sub = Ui.tv(this, "بنووسە چی دەتەوێت بیخوێنیتەوە (بە کوردی، عەرەبی یان ئینگلیزی). AI تامی پاشەکەوتکراوەکانیشت لەبەرچاو دەگرێت.", 12f, Ui.MUTED)
+                  sub.setPadding(0, dp(6), 0, dp(10))
+                  col.addView(sub)
+
+                  val et = Ui.edit(this, "نموونە: فانتازیا و ئاکشن، کارەکتەری سەرەکی زۆر بەهێز و چیرۆکی تۆڵەکردنەوە")
+                  et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                  et.minLines = 3
+                  et.gravity = Gravity.TOP
+                  col.addView(et, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val sugRow = HorizontalScrollView(this)
+                  sugRow.isHorizontalScrollBarEnabled = false
+                  val sugs = LinearLayout(this)
+                  sugs.orientation = LinearLayout.HORIZONTAL
+                  sugs.setPadding(0, dp(8), 0, dp(8))
+                  val ideas = listOf("تۆڵەکردنەوە و ئاکشن", "ڕۆمانسی ئارام", "سیستەم و پێشکەوتن (leveling)", "نهێنی و ترس", "کۆمیدی و ژیانی ڕۆژانە")
+                  for (idea in ideas) {
+                      val chip = pill(idea)
+                      chip.textSize = 12f
+                      chip.setOnClickListener { et.setText(idea) }
+                      val lp = LinearLayout.LayoutParams(WRAP, WRAP)
+                      lp.marginEnd = dp(6)
+                      sugs.addView(chip, lp)
+                  }
+                  sugRow.addView(sugs)
+                  col.addView(sugRow, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val row = LinearLayout(this)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  val go = Ui.button(this, "✦ بدۆزەرەوە", true) {
+                      val text = et.text.toString().trim()
+                      if (text.isEmpty()) {
+                          toast("تکایە شتێک بنووسە")
+                      } else {
+                          dlg.dismiss()
+                          if (Store.apiKey.isBlank()) showKeyDialog { runAi(text) } else runAi(text)
+                      }
+                  }
+                  val keyBtn = Ui.button(this, "کلیلی AI", false) {
+                      dlg.dismiss()
+                      showKeyDialog(null)
+                  }
+                  val glp = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  glp.marginEnd = dp(8)
+                  row.addView(go, glp)
+                  row.addView(keyBtn, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  dlg.setView(col)
+                  dlg.show()
+                  dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                  dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.94).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+              }
+
+              private fun showKeyDialog(onSaved: (() -> Unit)?) {
+                  val dlg = AlertDialog.Builder(this).create()
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  col.setPadding(dp(18), dp(18), dp(18), dp(18))
+                  col.background = Ui.round(this, Ui.SURFACE, 22)
+
+                  col.addView(Ui.tv(this, "کلیلی Gemini (بێبەرامبەر)", 18f, Ui.TEXT, true))
+                  val sub = Ui.tv(this, "بۆ ئەوەی AI کار بکات، کلیلێکی بێبەرامبەر لە Google AI Studio وەربگرە و لێرە دایبنێ. کلیلەکە تەنها لەسەر مۆبایلەکەت دەمێنێتەوە.", 12f, Ui.MUTED)
+                  sub.setPadding(0, dp(6), 0, dp(10))
+                  col.addView(sub)
+
+                  val keyEt = Ui.edit(this, "AIza...")
+                  keyEt.setText(Store.apiKey)
+                  keyEt.isSingleLine = true
+                  col.addView(keyEt, LinearLayout.LayoutParams(MATCH, WRAP))
+                  val modelEt = Ui.edit(this, "gemini-flash-latest")
+                  modelEt.setText(Store.model)
+                  modelEt.isSingleLine = true
+                  val mlp = LinearLayout.LayoutParams(MATCH, WRAP)
+                  mlp.topMargin = dp(8)
+                  col.addView(modelEt, mlp)
+
+                  val row = LinearLayout(this)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  row.setPadding(0, dp(12), 0, 0)
+                  val save = Ui.button(this, "پاشەکەوت", true) {
+                      Store.apiKey = keyEt.text.toString()
+                      Store.model = modelEt.text.toString()
+                      dlg.dismiss()
+                      if (Store.apiKey.isNotBlank()) onSaved?.invoke()
+                  }
+                  val get = Ui.button(this, "وەرگرتنی کلیل ↗", false) {
+                      try {
+                          startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/apikey")))
+                      } catch (_: Exception) { }
+                  }
+                  val slp = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  slp.marginEnd = dp(8)
+                  row.addView(save, slp)
+                  row.addView(get, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  dlg.setView(col)
+                  dlg.show()
+                  dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                  dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.94).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+              }
+
+              private fun runAi(text: String) {
+                  selectTab(0)
+                  statusTv.text = "✦ AI بیر دەکاتەوە..."
+                  Net.async(
+                      { Net.recommend(text) },
+                      { list ->
+                          if (list.isEmpty()) {
+                              statusTv.text = "AI هیچ ئەنجامێکی نەدۆزییەوە، دووبارە هەوڵ بدە"
+                          } else {
+                              showCustom(list, "✦ پێشنیاری AI بۆ: «" + text + "»")
+                          }
+                      },
+                      { err -> statusTv.text = "AI هەڵەی دا: " + err.take(140) }
+                  )
+              }
+
+              // ---------------- وەرگێڕانی ڕاستەوخۆ ----------------
+
+              private fun buildTranslate(): ScrollView {
+                  val sv = ScrollView(this)
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.gravity = Gravity.CENTER_HORIZONTAL
+                  col.setPadding(dp(20), dp(24), dp(20), dp(24))
+
+                  val logo = ImageView(this)
+                  logo.setImageResource(R.drawable.ic_launcher_foreground)
+                  col.addView(logo, LinearLayout.LayoutParams(dp(150), dp(150)))
+                  col.addView(Ui.tv(this, "وەرگێڕانی ڕاستەوخۆ", 22f, Ui.TEXT, true))
+                  val sub = Ui.tv(this, "لەسەر هەر ئەپ یان سایتێکی مانهوا، دەقی ئینگلیزی لە شوێنی خۆی بە کوردی دەگۆڕێت.", 13f, Ui.MUTED)
+                  sub.gravity = Gravity.CENTER
+                  sub.setPadding(0, dp(6), 0, dp(18))
+                  col.addView(sub)
+
+                  startBtn = Ui.button(this, "", true)
+                  startBtn.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
+                  startBtn.setPadding(dp(20), dp(18), dp(20), dp(18))
+                  startBtn.setOnClickListener { toggleTranslator() }
+                  col.addView(startBtn, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  translateStatus = Ui.tv(this, "", 13f, Ui.MUTED)
+                  translateStatus.gravity = Gravity.CENTER
+                  translateStatus.setPadding(0, dp(10), 0, dp(16))
+                  col.addView(translateStatus, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val card = LinearLayout(this)
+                  card.orientation = LinearLayout.VERTICAL
+                  card.background = Ui.round(this, Ui.SURFACE, 18)
+                  card.setPadding(dp(16), dp(14), dp(16), dp(14))
+                  card.addView(Ui.tv(this, "چۆن کار دەکات؟", 15f, Ui.TEXT, true))
+                  val steps = listOf(
+                      "١. دوگمەی سەرەوە بدە و مۆڵەتەکان (Display over other apps و تۆمارکردنی شاشە) ڕێپێبدە.",
+                      "٢. بڕۆ بۆ ئەو ئەپ یان سایتەی مانهوا دەخوێنیتەوە.",
+                      "٣. سکڕۆڵ بکە. کاتێک وەستایت، دەقی ئینگلیزی بە کوردی دەگۆڕدرێت.",
+                      "٤. بۆ وەستاندن، بگەڕێوە ئێرە و دوگمەکە بدە.",
+                      "تێبینی: ئینتەرنێت پێویستە بۆ وەرگێڕان."
+                  )
+                  for (s in steps) {
+                      val t = Ui.tv(this, s, 13f, Ui.MUTED)
+                      t.setPadding(0, dp(8), 0, 0)
+                      card.addView(t)
+                  }
+                  col.addView(card, LinearLayout.LayoutParams(MATCH, WRAP))
+                  sv.addView(col)
+                  return sv
+              }
+
+              private fun refreshTranslateUi() {
+                  if (!::startBtn.isInitialized) return
+                  val on = KurdishRealTimeTranslatorService.running
+                  startBtn.text = if (on) "■ وەستاندنی وەرگێڕان" else "▶ دەستپێکردنی وەرگێڕانی ڕاستەوخۆ"
+                  startBtn.background = if (on) Ui.round(this, Ui.HEART, 14) else Ui.grad(this, Ui.ACCENT, Ui.ACCENT2, 14)
+                  translateStatus.text = if (on) "چالاکە — بڕۆ بۆ مانهواکەت" else "ئامادەیە"
+              }
+
+              private fun toggleTranslator() {
+                  if (KurdishRealTimeTranslatorService.running) {
+                      stopService(Intent(this, KurdishRealTimeTranslatorService::class.java))
+                      Net.ui.postDelayed({ refreshTranslateUi() }, 500)
+                      return
+                  }
+                  if (!Settings.canDrawOverlays(this)) {
+                      toast("تکایە مۆڵەتی Display over other apps چالاک بکە، پاشان دووبارە دوگمەکە بدە")
+                      startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
+                      return
+                  }
+                  val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                  captureLauncher.launch(mpm.createScreenCaptureIntent())
+              }
+
+              // ---------------- پاشەکەوتکراوەکان ----------------
+
+              private fun buildSaved(): LinearLayout {
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  val title = Ui.tv(this, "♥ پاشەکەوتکراوەکان", 20f, Ui.TEXT, true)
+                  title.setPadding(dp(18), dp(18), dp(18), dp(8))
+                  col.addView(title, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  savedEmpty = Ui.tv(this, "هێشتا هیچت پاشەکەوت نەکردووە.\nلە بەشی دۆزینەوە دوگمەی ♡ بدە، AI لێیەوە تامەکەت فێر دەبێت.", 14f, Ui.MUTED)
+                  savedEmpty.gravity = Gravity.CENTER
+                  savedEmpty.setPadding(dp(24), dp(40), dp(24), dp(24))
+                  col.addView(savedEmpty, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val rv = RecyclerView(this)
+                  rv.layoutManager = GridLayoutManager(this, 2)
+                  rv.clipToPadding = false
+                  rv.setPadding(dp(6), dp(4), dp(6), dp(12))
+                  savedAdapter = CardAdapter(this, ArrayList(), false,
+                      { m -> openDetail(m) }, { m -> onHeart(m) }, { m -> onHide(m) })
+                  rv.adapter = savedAdapter
+                  col.addView(rv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+                  return col
+              }
+
+              private fun refreshSaved() {
+                  if (!::savedAdapter.isInitialized) return
+                  savedAdapter.items.clear()
+                  savedAdapter.items.addAll(Store.saved())
+                  savedAdapter.notifyDataSetChanged()
+                  savedEmpty.visibility = if (savedAdapter.items.isEmpty()) View.VISIBLE else View.GONE
               }
           }
           KMEOF
@@ -695,7 +1671,8 @@ jobs:
               private var virtualDisplay: VirtualDisplay? = null
               private var imageReader: ImageReader? = null
               private var windowManager: WindowManager? = null
-              private var container: FrameLayout? = null
+              // چەند چینێکی ئۆڤەرلەی سەرەوەی یەک: ئەگەر سیستەم شەفافییان بکات، یەکتر دەپۆشن و ئینگلیزییەکە نامێنێت
+              private val containers = ArrayList<FrameLayout>()
 
               private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
               private val orchestrator = Executors.newSingleThreadExecutor()
@@ -765,6 +1742,7 @@ jobs:
                       setupScreenCapture()
                       setupOverlayWindow()
                       started = true
+                      running = true
                       warmUp()
                       handler.post(runnableCode)
                   } catch (e: Exception) {
@@ -801,31 +1779,31 @@ jobs:
               }
 
               private fun setupOverlayWindow() {
-                  val acc = OverlayAccessibilityService.instance
-                      ?: throw IllegalStateException("Accessibility چالاک نییە")
-                  val wm = acc.getSystemService(WINDOW_SERVICE) as WindowManager
+                  val wm = getSystemService(WINDOW_SERVICE) as WindowManager
                   windowManager = wm
-                  val c = FrameLayout(acc)
-                  container = c
-
-                  val params = WindowManager.LayoutParams(
-                      WindowManager.LayoutParams.MATCH_PARENT,
-                      WindowManager.LayoutParams.MATCH_PARENT,
-                      WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                          WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                          WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                          WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                      PixelFormat.TRANSLUCENT
-                  ).apply {
-                      gravity = Gravity.TOP or Gravity.START
-                      if (Build.VERSION.SDK_INT >= 30) {
-                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-                      } else if (Build.VERSION.SDK_INT >= 28) {
-                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                  repeat(OVERLAY_LAYERS) {
+                      val c = FrameLayout(this)
+                      val params = WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.MATCH_PARENT,
+                          WindowManager.LayoutParams.MATCH_PARENT,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                              WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                              WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                              WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                          PixelFormat.TRANSLUCENT
+                      ).apply {
+                          gravity = Gravity.TOP or Gravity.START
+                          alpha = 1f
+                          if (Build.VERSION.SDK_INT >= 30) {
+                              layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                          } else if (Build.VERSION.SDK_INT >= 28) {
+                              layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                          }
                       }
+                      wm.addView(c, params)
+                      containers.add(c)
                   }
-                  wm.addView(c, params)
               }
 
               private fun warmUp() {
@@ -1026,42 +2004,46 @@ jobs:
               // ---------- نیشاندان لەجێی ئینگلیزییەکە ----------
 
               private fun showBlocks(blocks: List<Block>, results: List<String?>) {
-                  val c = container ?: return
-                  c.removeAllViews()
+                  if (containers.isEmpty()) return
                   val loc = IntArray(2)
-                  c.getLocationOnScreen(loc)
+                  containers[0].getLocationOnScreen(loc)
                   var shown = 0
+
+                  for (c in containers) c.removeAllViews()
 
                   for (i in blocks.indices) {
                       val tr = results[i] ?: continue
                       val b = blocks[i]
-                      val padX = (b.rect.width() * 0.08f).toInt() + 10
-                      val padY = (b.rect.height() * 0.06f).toInt() + 8
+                      val padX = (b.rect.width() * 0.10f).toInt() + 8
+                      val padY = (b.rect.height() * 0.08f).toInt() + 6
                       val left = (b.rect.left - padX).coerceAtLeast(0)
                       val top = (b.rect.top - padY).coerceAtLeast(0)
                       val right = (b.rect.right + padX).coerceAtMost(screenW)
                       val bottom = (b.rect.bottom + padY).coerceAtMost(screenH)
                       if (right <= left || bottom <= top) continue
 
-                      val tv = TextView(this)
-                      tv.setAutoSizeTextTypeUniformWithConfiguration(6, 30, 1, TypedValue.COMPLEX_UNIT_SP)
-                      tv.text = tr
-                      tv.setTextColor(if (lum(b.bg) > 150) Color.BLACK else Color.WHITE)
-                      tv.typeface = Typeface.DEFAULT_BOLD
-                      tv.gravity = Gravity.CENTER
-                      tv.textDirection = View.TEXT_DIRECTION_RTL
-                      tv.includeFontPadding = false
-                      tv.setPadding(4, 2, 4, 2)
-                      tv.alpha = 1f
-                      val bgShape = GradientDrawable()
-                      bgShape.setColor(b.bg)
-                      bgShape.cornerRadius = 14f
-                      tv.background = bgShape
+                      for ((layer, c) in containers.withIndex()) {
+                          val tv = TextView(this)
+                          tv.setAutoSizeTextTypeUniformWithConfiguration(6, 30, 1, TypedValue.COMPLEX_UNIT_SP)
+                          // تەنها چینی سەرەوە دەقی تێدایە؛ چینەکانی خوارەوە تەنها بۆ داپۆشین
+                          tv.text = if (layer == containers.size - 1) tr else ""
+                          tv.setTextColor(if (lum(b.bg) > 150) Color.BLACK else Color.WHITE)
+                          tv.typeface = Typeface.DEFAULT_BOLD
+                          tv.gravity = Gravity.CENTER
+                          tv.textDirection = View.TEXT_DIRECTION_RTL
+                          tv.includeFontPadding = false
+                          tv.setPadding(4, 2, 4, 2)
+                          tv.alpha = 1f
+                          val bgShape = GradientDrawable()
+                          bgShape.setColor(b.bg)
+                          bgShape.cornerRadius = 14f
+                          tv.background = bgShape
 
-                      val lp = FrameLayout.LayoutParams(right - left, bottom - top)
-                      lp.leftMargin = left - loc[0]
-                      lp.topMargin = top - loc[1]
-                      c.addView(tv, lp)
+                          val lp = FrameLayout.LayoutParams(right - left, bottom - top)
+                          lp.leftMargin = left - loc[0]
+                          lp.topMargin = top - loc[1]
+                          c.addView(tv, lp)
+                      }
                       shown++
                   }
 
@@ -1073,7 +2055,7 @@ jobs:
               }
 
               private fun hideOverlay() {
-                  container?.removeAllViews()
+                  for (c in containers) c.removeAllViews()
                   overlayVisible = false
               }
 
@@ -1085,6 +2067,7 @@ jobs:
               override fun onDestroy() {
                   super.onDestroy()
                   started = false
+                  running = false
                   handler.removeCallbacksAndMessages(null)
                   orchestrator.shutdownNow()
                   workers.shutdownNow()
@@ -1094,10 +2077,10 @@ jobs:
                   mediaProjection?.stop()
                   lastBitmap?.recycle()
                   lastBitmap = null
-                  try {
-                      container?.let { windowManager?.removeView(it) }
-                  } catch (_: Exception) {}
-                  container = null
+                  for (c in containers) {
+                      try { windowManager?.removeView(c) } catch (_: Exception) {}
+                  }
+                  containers.clear()
               }
 
               override fun onBind(intent: Intent?): IBinder? = null
@@ -1105,10 +2088,198 @@ jobs:
               companion object {
                   private const val TAG = "KurdishManhwa"
                   private const val CHANNEL_ID = "KurdishManhwaChannel"
+                  @Volatile var running = false
+                  private const val OVERLAY_LAYERS = 3
                   private const val SIG_W = 48
                   private const val SIG_H = 96
               }
           }
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp)
+          base64 -d > app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp <<'KMEOF'
+          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
+          gAAAAAAAAAA=
           KMEOF
 
       - name: Build debug APK
