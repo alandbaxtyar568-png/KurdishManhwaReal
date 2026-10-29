@@ -154,6 +154,8 @@ jobs:
               <foreground android:drawable="@drawable/ic_launcher_foreground" />
           </adaptive-icon>
           KMEOF
+          mkdir -p app/src/main/java/com/kurdish/manhwareal
+          printf 'package com.kurdish.manhwareal\n\nobject Secrets {\n    const val PROXY = "https://yellow-limit-446a.alandbaxtyar568.workers.dev"\n}\n' > app/src/main/java/com/kurdish/manhwareal/Secrets.kt
           mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Data.kt)
           cat > app/src/main/java/com/kurdish/manhwareal/Data.kt <<'KMEOF'
           package com.kurdish.manhwareal
@@ -413,6 +415,19 @@ jobs:
                   }
               }
 
+              fun callGemini(body: String): String {
+                  val key = Store.apiKey
+                  return if (key.isNotBlank()) {
+                      httpPost(
+                          "https://generativelanguage.googleapis.com/v1beta/models/" + Store.model + ":generateContent",
+                          body,
+                          mapOf("Content-Type" to "application/json", "x-goog-api-key" to key)
+                      )
+                  } else {
+                      httpPost(Secrets.PROXY, body, mapOf("Content-Type" to "application/json"))
+                  }
+              }
+
               private fun gql(query: String, vars: JSONObject): JSONObject {
                   val body = JSONObject().put("query", query).put("variables", vars).toString()
                   val resp = httpPost(
@@ -506,8 +521,6 @@ jobs:
 
               /** AI: Gemini پێشنیار دەکات، پاشان لە AniList دەیاندۆزینەوە */
               fun recommend(request: String): List<Manhwa> {
-                  val key = Store.apiKey
-                  if (key.isBlank()) throw Exception("کلیلی AI دانەنراوە")
                   val liked = Store.saved().take(12).map { it.title }
                   val avoid = Store.hiddenTitles()
                   val prompt = "You are an expert on Korean manhwa and webtoons. The user describes what they want to read " +
@@ -526,11 +539,7 @@ jobs:
                       .put("contents", JSONArray().put(content))
                       .put("generationConfig", JSONObject().put("temperature", 0.8).put("responseMimeType", "application/json"))
 
-                  val resp = httpPost(
-                      "https://generativelanguage.googleapis.com/v1beta/models/" + Store.model + ":generateContent",
-                      body.toString(),
-                      mapOf("Content-Type" to "application/json", "x-goog-api-key" to key)
-                  )
+                  val resp = callGemini(body.toString())
                   val text = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
                       .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
                   val startIdx = text.indexOf('[')
@@ -859,6 +868,8 @@ jobs:
           import androidx.activity.OnBackPressedCallback
           import androidx.core.view.ViewCompat
           import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsControllerCompat
           import androidx.appcompat.app.AlertDialog
           import androidx.appcompat.app.AppCompatActivity
           import androidx.core.content.ContextCompat
@@ -873,6 +884,7 @@ jobs:
               private lateinit var discoverPage: LinearLayout
               private lateinit var translatePage: ScrollView
               private lateinit var webTab: WebTab
+              private lateinit var navBar: LinearLayout
               private lateinit var savedPage: LinearLayout
               private val navItems = ArrayList<LinearLayout>()
 
@@ -949,8 +961,9 @@ jobs:
                   pages.addView(savedPage, FrameLayout.LayoutParams(MATCH, MATCH))
                   webTab = WebTab(this)
                   pages.addView(webTab.root, FrameLayout.LayoutParams(MATCH, MATCH))
+                  webTab.onFullscreen = { on -> setFullscreen(on) }
 
-                  root.addView(buildNav(), LinearLayout.LayoutParams(MATCH, WRAP))
+                  root.addView(buildNav().also { navBar = it }, LinearLayout.LayoutParams(MATCH, WRAP))
                   setContentView(root)
                   ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
                       val b = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
@@ -1019,6 +1032,7 @@ jobs:
                   if (i == 2) refreshSaved()
                   if (i == 1) refreshTranslateUi()
                   if (i == 3) webTab.onShown()
+                  if (i != 3) webTab.exitFullscreen()
               }
 
               private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
@@ -1386,11 +1400,7 @@ jobs:
               // ---------------- AI ----------------
 
               private fun pickImage() {
-                  if (Store.apiKey.isBlank()) {
-                      showKeyDialog { imagePicker.launch("image/*") }
-                  } else {
-                      imagePicker.launch("image/*")
-                  }
+                  imagePicker.launch("image/*")
               }
 
               private fun runImageSearch(uri: Uri) {
@@ -1405,7 +1415,7 @@ jobs:
                               showCustom(list, "✦ ئەنجامی گەڕان بە وێنە")
                           }
                       },
-                      { err -> statusTv.text = "AI هەڵەی دا: " + err.take(140) }
+                      { err -> statusTv.text = aiErr(err) }
                   )
               }
 
@@ -1413,6 +1423,21 @@ jobs:
                   super.onDestroy()
                   webTab.destroy()
               }
+
+              private fun setFullscreen(on: Boolean) {
+                  navBar.visibility = if (on) View.GONE else View.VISIBLE
+                  val c = WindowCompat.getInsetsController(window, window.decorView)
+                  c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                  if (on) c.hide(WindowInsetsCompat.Type.systemBars()) else c.show(WindowInsetsCompat.Type.systemBars())
+              }
+
+              private fun aiErr(err: String): String =
+                  if (err.contains("HTTP 429"))
+                      "داواکاری زۆرە، کەمێک چاوەڕێ بکە و دووبارە هەوڵ بدە"
+                  else if (err.contains("API key", true) || err.contains("PERMISSION_DENIED") || err.contains("دانەنراوە"))
+                      "کلیلی AI هەڵەیە یان دانەنراوە"
+                  else
+                      "AI هەڵەی دا: " + err.take(140)
 
               private fun showAiDialog() {
                   val dlg = AlertDialog.Builder(this).create()
@@ -1458,7 +1483,7 @@ jobs:
                           toast("تکایە شتێک بنووسە")
                       } else {
                           dlg.dismiss()
-                          if (Store.apiKey.isBlank()) showKeyDialog { runAi(text) } else runAi(text)
+                          runAi(text)
                       }
                   }
                   val keyBtn = Ui.button(this, "کلیلی AI", false) {
@@ -1539,7 +1564,7 @@ jobs:
                               showCustom(list, "✦ پێشنیاری AI بۆ: «" + text + "»")
                           }
                       },
-                      { err -> statusTv.text = "AI هەڵەی دا: " + err.take(140) }
+                      { err -> statusTv.text = aiErr(err) }
                   )
               }
 
@@ -2160,7 +2185,6 @@ jobs:
           import android.content.Context
           import android.graphics.Bitmap
           import android.graphics.BitmapFactory
-          import android.graphics.Canvas
           import android.graphics.Color
           import android.graphics.Rect
           import android.graphics.Typeface
@@ -2168,15 +2192,16 @@ jobs:
           import android.net.Uri
           import android.os.Handler
           import android.os.Looper
+          import android.os.SystemClock
+          import android.text.InputType
           import android.util.Base64
           import android.util.TypedValue
           import android.view.Gravity
-          import android.view.MotionEvent
+          import android.view.PixelCopy
           import android.view.View
           import android.view.ViewGroup
           import android.view.inputmethod.EditorInfo
           import android.view.inputmethod.InputMethodManager
-          import android.text.InputType
           import android.webkit.CookieManager
           import android.webkit.WebChromeClient
           import android.webkit.WebResourceRequest
@@ -2199,6 +2224,7 @@ jobs:
           import java.net.URLEncoder
           import java.util.concurrent.Callable
           import java.util.concurrent.ConcurrentHashMap
+          import java.util.concurrent.Executors
           import java.util.concurrent.TimeUnit
 
           private const val WM = ViewGroup.LayoutParams.MATCH_PARENT
@@ -2216,8 +2242,8 @@ jobs:
                       val url = "https://translate.googleapis.com/translate_a/single" +
                           "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text.take(500), "UTF-8")
                       val conn = URL(url).openConnection() as HttpURLConnection
-                      conn.connectTimeout = 4000
-                      conn.readTimeout = 5000
+                      conn.connectTimeout = 3000
+                      conn.readTimeout = 4000
                       conn.setRequestProperty("User-Agent", "Mozilla/5.0")
                       val response = try {
                           conn.inputStream.bufferedReader().use { it.readText() }
@@ -2260,8 +2286,6 @@ jobs:
               }
 
               fun identify(jpeg: ByteArray): List<Manhwa> {
-                  val key = Store.apiKey
-                  if (key.isBlank()) throw Exception("کلیلی AI دانەنراوە")
                   val prompt = """You are an expert on Korean manhwa, webtoons, manga and manhua. Look at the image. It may be a cover, a screenshot of a panel or page, or a hand drawing / fan art of a character. Identify which Korean manhwa or webtoon it comes from. Give up to 6 candidate titles, the most likely first, using the exact English or romanized title as listed on AniList. If you cannot recognise it, return []. Return ONLY a JSON array, no other text: [{"title":"...","reason":"one short sentence in Kurdish Sorani (Arabic script) saying what in the image matches"}]"""
 
                   val parts = JSONArray()
@@ -2278,11 +2302,7 @@ jobs:
                       .put("contents", JSONArray().put(JSONObject().put("parts", parts)))
                       .put("generationConfig", JSONObject().put("temperature", 0.3).put("responseMimeType", "application/json"))
 
-                  val resp = Net.httpPost(
-                      "https://generativelanguage.googleapis.com/v1beta/models/" + Store.model + ":generateContent",
-                      body.toString(),
-                      mapOf("Content-Type" to "application/json", "x-goog-api-key" to key)
-                  )
+                  val resp = Net.callGemini(body.toString())
                   val text = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
                       .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
                   val startIdx = text.indexOf('[')
@@ -2316,8 +2336,9 @@ jobs:
 
           /**
            * وێبی ناو ئەپەکە + وەرگێڕانی ڕاستەوخۆ.
-           * وێنەی WebView خۆی دەگیرێت (بەبێ MediaProjection)، OCR دەکرێت و دەقی کوردی لەسەر دەنوسرێت.
-           * کاتی سکڕۆڵ، دەقە وەرگێڕدراوەکان لەگەڵ پەڕەکە دەجوڵێن و دوای وەستان نوێ دەکرێنەوە.
+           * وێنەی خودی پەنجەرەی WebView دەگیرێت (PixelCopy) و OCR دەکرێت.
+           * دەقە کوردییەکان بەپێی شوێنی پەڕەکە دادەنرێن و لەگەڵ سکڕۆڵ دەجوڵێن؛ هەر بەشێکی نوێ کە دەردەکەوێت
+           * بەردەوام زیاد دەکرێت (بەبێ ئەوەی ئەوانەی پێشوو بسڕدرێنەوە، بۆیە نالەرزێت).
            */
           class WebTab(private val act: Activity) {
 
@@ -2327,20 +2348,24 @@ jobs:
               private val web = WebView(act)
               private val overlay = FrameLayout(act)
               private val bar = View(act)
+              private val topBars = LinearLayout(act)
               private lateinit var urlEt: EditText
               private lateinit var trBtn: TextView
+              private lateinit var exitBtn: TextView
+
+              var onFullscreen: ((Boolean) -> Unit)? = null
 
               private val handler = Handler(Looper.getMainLooper())
               private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+              private val trPool = Executors.newFixedThreadPool(10)
               private val ocrRunnable = Runnable { runOcr() }
 
               private var translating = false
+              private var fullscreen = false
               private var busy = false
               private var loaded = false
               private var navGen = 0
-              private var baseX = 0
-              private var baseY = 0
-              private var lastKey = ""
+              private var lastOcr = 0L
 
               private fun dp(v: Int): Int = Ui.dp(act, v)
 
@@ -2351,6 +2376,8 @@ jobs:
 
               private fun build() {
                   root.orientation = LinearLayout.VERTICAL
+
+                  topBars.orientation = LinearLayout.VERTICAL
 
                   // ڕیزی ناونیشان
                   val top = LinearLayout(act)
@@ -2382,7 +2409,7 @@ jobs:
 
                   val go = Ui.button(act, "→", true) { open(urlEt.text.toString()) }
                   top.addView(go, LinearLayout.LayoutParams(WW, WW))
-                  root.addView(top, LinearLayout.LayoutParams(WM, WW))
+                  topBars.addView(top, LinearLayout.LayoutParams(WM, WW))
 
                   // ڕیزی کردارەکان
                   val scroll = HorizontalScrollView(act)
@@ -2397,12 +2424,22 @@ jobs:
                   tlp.marginEnd = dp(8)
                   row.addView(trBtn, tlp)
 
+                  val fsBtn = Ui.button(act, "⛶ تەواوی شاشە", false) { setFullscreen(true) }
+                  val flp = LinearLayout.LayoutParams(WW, WW)
+                  flp.marginEnd = dp(8)
+                  row.addView(fsBtn, flp)
+
                   val reload = Ui.button(act, "⟳", false) { web.reload() }
                   val rlp = LinearLayout.LayoutParams(WW, WW)
                   rlp.marginEnd = dp(8)
                   row.addView(reload, rlp)
 
-                  val sites = listOf("Google" to "https://www.google.com", "Webtoon" to "https://www.webtoons.com", "AniList" to "https://anilist.co")
+                  val sites = listOf(
+                      "Asura Scans" to "https://asurascans.com",
+                      "Webtoon" to "https://www.webtoons.com",
+                      "AniList" to "https://anilist.co",
+                      "Google" to "https://www.google.com"
+                  )
                   for (s in sites) {
                       val chip = Ui.button(act, s.first, false) { open(s.second) }
                       val clp = LinearLayout.LayoutParams(WW, WW)
@@ -2410,7 +2447,8 @@ jobs:
                       row.addView(chip, clp)
                   }
                   scroll.addView(row)
-                  root.addView(scroll, LinearLayout.LayoutParams(WM, WW))
+                  topBars.addView(scroll, LinearLayout.LayoutParams(WM, WW))
+                  root.addView(topBars, LinearLayout.LayoutParams(WM, WW))
 
                   bar.setBackgroundColor(Ui.ACCENT2)
                   bar.visibility = View.GONE
@@ -2418,15 +2456,25 @@ jobs:
 
                   val frame = FrameLayout(act)
                   frame.addView(web, FrameLayout.LayoutParams(WM, WM))
+                  overlay.layoutDirection = View.LAYOUT_DIRECTION_LTR
                   overlay.isClickable = false
                   overlay.isFocusable = false
                   frame.addView(overlay, FrameLayout.LayoutParams(WM, WM))
-                  root.addView(frame, LinearLayout.LayoutParams(WM, 0, 1f))
 
+                  exitBtn = Ui.tv(act, "✕", 16f, Color.WHITE, true)
+                  exitBtn.gravity = Gravity.CENTER
+                  exitBtn.background = Ui.round(act, 0xAA000000.toInt(), 20)
+                  exitBtn.visibility = View.GONE
+                  exitBtn.setOnClickListener { setFullscreen(false) }
+                  val elp = FrameLayout.LayoutParams(dp(40), dp(40), Gravity.TOP or Gravity.END)
+                  elp.setMargins(dp(12), dp(12), dp(12), dp(12))
+                  frame.addView(exitBtn, elp)
+
+                  root.addView(frame, LinearLayout.LayoutParams(WM, 0, 1f))
                   styleTr()
               }
 
-              @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
+              @SuppressLint("SetJavaScriptEnabled")
               private fun setup() {
                   val st = web.settings
                   st.javaScriptEnabled = true
@@ -2437,7 +2485,7 @@ jobs:
                   st.builtInZoomControls = false
                   st.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                   web.overScrollMode = View.OVER_SCROLL_NEVER
-                  web.setBackgroundColor(Color.WHITE)
+                  web.setBackgroundColor(Color.BLACK)
                   CookieManager.getInstance().setAcceptCookie(true)
                   CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
 
@@ -2449,7 +2497,11 @@ jobs:
                       }
 
                       override fun onPageFinished(view: WebView?, url: String?) {
-                          if (translating) schedule(900, true)
+                          if (translating) {
+                              schedule(500)
+                              handler.postDelayed(ocrRunnable, 1800)
+                              handler.postDelayed(ocrRunnable, 4000)
+                          }
                       }
 
                       override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -2469,14 +2521,18 @@ jobs:
 
                   web.setOnScrollChangeListener { _, sx, sy, _, _ ->
                       reposition(sx, sy)
-                      if (translating) schedule(220, true)
+                      if (translating) {
+                          val now = SystemClock.uptimeMillis()
+                          handler.removeCallbacks(ocrRunnable)
+                          if (!busy && now - lastOcr > 350) runOcr() else handler.postDelayed(ocrRunnable, 160)
+                      }
                   }
 
-                  web.setOnTouchListener { _, ev ->
-                      if (translating && (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL)) {
-                          schedule(700, true)
+                  web.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
+                      if (r - l != orr - ol || b - t != ob - ot) {
+                          clearOverlay()
+                          if (translating) schedule(350)
                       }
-                      false
                   }
               }
 
@@ -2504,12 +2560,26 @@ jobs:
               fun onShown() {
                   if (!loaded) {
                       loaded = true
-                      open("https://www.google.com")
+                      open("https://asurascans.com")
                   }
-                  if (translating) schedule(200, true)
+                  if (translating) schedule(200)
               }
 
+              fun setFullscreen(on: Boolean) {
+                  if (fullscreen == on) return
+                  fullscreen = on
+                  topBars.visibility = if (on) View.GONE else View.VISIBLE
+                  exitBtn.visibility = if (on) View.VISIBLE else View.GONE
+                  onFullscreen?.invoke(on)
+              }
+
+              fun exitFullscreen() = setFullscreen(false)
+
               fun back(): Boolean {
+                  if (fullscreen) {
+                      setFullscreen(false)
+                      return true
+                  }
                   if (web.canGoBack()) {
                       web.goBack()
                       return true
@@ -2519,6 +2589,7 @@ jobs:
 
               fun destroy() {
                   handler.removeCallbacksAndMessages(null)
+                  trPool.shutdownNow()
                   try {
                       web.stopLoading()
                       (web.parent as? ViewGroup)?.removeView(web)
@@ -2539,32 +2610,28 @@ jobs:
                   translating = !translating
                   styleTr()
                   if (translating) {
-                      schedule(100, true)
+                      schedule(100)
                   } else {
                       handler.removeCallbacks(ocrRunnable)
                       clearOverlay()
                   }
               }
 
-              private fun schedule(delay: Long, again: Boolean = false) {
+              private fun schedule(delay: Long) {
                   handler.removeCallbacks(ocrRunnable)
                   handler.postDelayed(ocrRunnable, delay)
-                  // دووبارە پشکنین بۆ ئەو وێنانەی دواتر بار دەبن
-                  if (again) handler.postDelayed(ocrRunnable, delay + 1400)
               }
 
               private fun clearOverlay() {
                   overlay.removeAllViews()
-                  lastKey = ""
               }
 
               private fun reposition(x: Int, y: Int) {
-                  val dx = (baseX - x).toFloat()
-                  val dy = (baseY - y).toFloat()
                   for (i in 0 until overlay.childCount) {
                       val v = overlay.getChildAt(i)
-                      v.translationX = dx
-                      v.translationY = dy
+                      val p = v.tag as? IntArray ?: continue
+                      v.translationX = (p[0] - x).toFloat()
+                      v.translationY = (p[1] - y).toFloat()
                   }
               }
 
@@ -2588,17 +2655,30 @@ jobs:
                   return cols[cols.size / 2] or (0xFF shl 24)
               }
 
+              /** ئایا ئەم شوێنە پێشتر دەقی کوردی لەسەر دانراوە؟ */
+              private fun covered(pl: Int, pt: Int, pr: Int, pb: Int): Boolean {
+                  val cx = (pl + pr) / 2
+                  val cy = (pt + pb) / 2
+                  for (i in 0 until overlay.childCount) {
+                      val v = overlay.getChildAt(i)
+                      val p = v.tag as? IntArray ?: continue
+                      val lp = v.layoutParams
+                      if (cx >= p[0] - 12 && cx <= p[0] + lp.width + 12 && cy >= p[1] - 12 && cy <= p[1] + lp.height + 12) return true
+                  }
+                  return false
+              }
+
               private fun runOcr() {
                   if (!translating) return
                   if (root.visibility != View.VISIBLE) return
                   if (busy) {
-                      schedule(300)
+                      schedule(200)
                       return
                   }
                   val w = web.width
                   val h = web.height
-                  if (w <= 0 || h <= 0) return
-                  val scale = if (w > 720) 720f / w else 1f
+                  if (w <= 0 || h <= 0 || web.windowToken == null) return
+                  val scale = if (w > 640) 640f / w else 1f
                   val bw = (w * scale).toInt().coerceAtLeast(1)
                   val bh = (h * scale).toInt().coerceAtLeast(1)
                   val bmp = try {
@@ -2606,20 +2686,34 @@ jobs:
                   } catch (e: Throwable) {
                       return
                   }
-                  try {
-                      val c = Canvas(bmp)
-                      c.drawColor(Color.WHITE)
-                      c.scale(scale, scale)
-                      web.draw(c) // تەنها WebView دەگیرێت، نەک ئۆڤەرلەیەکە
-                  } catch (e: Throwable) {
-                      bmp.recycle()
-                      return
-                  }
+                  busy = true
+                  lastOcr = SystemClock.uptimeMillis()
                   val gen = navGen
                   val sx = web.scrollX
                   val sy = web.scrollY
-                  busy = true
+                  val loc = IntArray(2)
+                  web.getLocationInWindow(loc)
+                  val src = Rect(loc[0], loc[1], loc[0] + w, loc[1] + h)
+                  try {
+                      PixelCopy.request(
+                          act.window, src, bmp,
+                          PixelCopy.OnPixelCopyFinishedListener { res ->
+                              if (res == PixelCopy.SUCCESS) {
+                                  analyze(bmp, scale, sx, sy, gen)
+                              } else {
+                                  bmp.recycle()
+                                  busy = false
+                              }
+                          },
+                          handler
+                      )
+                  } catch (e: Throwable) {
+                      bmp.recycle()
+                      busy = false
+                  }
+              }
 
+              private fun analyze(bmp: Bitmap, scale: Float, sx: Int, sy: Int, gen: Int) {
                   recognizer.process(InputImage.fromBitmap(bmp, 0))
                       .addOnSuccessListener { vt ->
                           if (gen != navGen || !translating) {
@@ -2630,26 +2724,33 @@ jobs:
                           for (b in vt.textBlocks) {
                               val box = b.boundingBox ?: continue
                               val t = b.text.replace("\n", " ").trim()
-                              if (t.count { it.isLetter() } < 2) continue
+                              val nonSpace = t.count { !it.isWhitespace() }
+                              if (nonSpace < 3 || t.count { it.isLetter() } < 2) continue
+                              if (t.count { it.isLetter() }.toFloat() / nonSpace < 0.6f) continue
                               val r = Rect(
                                   (box.left / scale).toInt(), (box.top / scale).toInt(),
                                   (box.right / scale).toInt(), (box.bottom / scale).toInt()
                               )
+                              if (covered(r.left + sx, r.top + sy, r.right + sx, r.bottom + sy)) continue
                               blocks.add(Block(t, r, sampleBg(bmp, box)))
                               if (blocks.size >= 14) break
                           }
                           if (blocks.isEmpty()) {
                               busy = false
-                              clearOverlay()
                               return@addOnSuccessListener
                           }
                           Thread {
                               try {
-                                  val futures = blocks.map { b -> Net.io.submit(Callable<String?> { Tr.translate(b.text) }) }
-                                  val results = futures.map { f ->
-                                      try { f.get(6, TimeUnit.SECONDS) } catch (e: Exception) { null }
+                                  val futures = HashMap<String, java.util.concurrent.Future<String?>>()
+                                  for (b in blocks) {
+                                      if (!futures.containsKey(b.text)) {
+                                          futures[b.text] = trPool.submit(Callable<String?> { Tr.translate(b.text) })
+                                      }
                                   }
-                                  handler.post { applyBlocks(blocks, results, sx, sy, gen) }
+                                  val results = blocks.map { b ->
+                                      try { futures[b.text]?.get(6, TimeUnit.SECONDS) } catch (e: Exception) { null }
+                                  }
+                                  handler.post { addBlocks(blocks, results, sx, sy, gen) }
                               } catch (e: Exception) {
                                   handler.post { busy = false }
                               }
@@ -2659,28 +2760,9 @@ jobs:
                       .addOnCompleteListener { bmp.recycle() }
               }
 
-              private fun applyBlocks(blocks: List<Block>, results: List<String?>, sx: Int, sy: Int, gen: Int) {
+              private fun addBlocks(blocks: List<Block>, results: List<String?>, sx: Int, sy: Int, gen: Int) {
                   busy = false
                   if (!translating || gen != navGen) return
-
-                  // ئەگەر هەمان دەق لە هەمان شوێنی پەڕەدا بوو، دووبارە دروستی ناکەینەوە (بۆ نەبوونی لەرزین)
-                  val sb = StringBuilder()
-                  for (i in blocks.indices) {
-                      if (results[i] == null) continue
-                      val r = blocks[i].rect
-                      sb.append(blocks[i].text.take(24)).append('|').append(r.left / 24).append(',').append((r.top + sy) / 24).append(';')
-                  }
-                  val key = sb.toString()
-                  if (key.isEmpty()) return
-                  if (key == lastKey && overlay.childCount > 0) {
-                      reposition(web.scrollX, web.scrollY)
-                      return
-                  }
-                  lastKey = key
-
-                  overlay.removeAllViews()
-                  baseX = sx
-                  baseY = sy
                   val maxW = web.width
                   val maxH = web.height
 
@@ -2695,6 +2777,10 @@ jobs:
                       val bottom = (b.rect.bottom + padY).coerceAtMost(maxH)
                       if (right <= left || bottom <= top) continue
 
+                      val pl = left + sx
+                      val pt = top + sy
+                      if (covered(pl, pt, pl + (right - left), pt + (bottom - top))) continue
+
                       val tv = TextView(act)
                       tv.setAutoSizeTextTypeUniformWithConfiguration(6, 30, 1, TypedValue.COMPLEX_UNIT_SP)
                       tv.text = tr
@@ -2708,11 +2794,21 @@ jobs:
                       shape.setColor(b.bg)
                       shape.cornerRadius = 14f
                       tv.background = shape
+                      tv.tag = intArrayOf(pl, pt)
 
                       val lp = FrameLayout.LayoutParams(right - left, bottom - top)
-                      lp.leftMargin = left
-                      lp.topMargin = top
+                      lp.gravity = Gravity.TOP or Gravity.START
                       overlay.addView(tv, lp)
+                  }
+
+                  // پاککردنەوەی بلۆکە زۆر دوورەکان بۆ ئەوەی ئەپەکە قورس نەبێت
+                  val cy = web.scrollY
+                  var k = overlay.childCount - 1
+                  while (k >= 0) {
+                      val v = overlay.getChildAt(k)
+                      val p = v.tag as? IntArray
+                      if (p != null && Math.abs(p[1] - cy) > maxH * 3) overlay.removeViewAt(k)
+                      k--
                   }
                   reposition(web.scrollX, web.scrollY)
               }
