@@ -18,7 +18,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.4'
+          gradle-version: '8.9'
 
       - name: Create project files
         run: |
@@ -44,7 +44,7 @@ jobs:
           mkdir -p $(dirname build.gradle)
           cat > build.gradle <<'KMEOF'
           plugins {
-              id 'com.android.application' version '8.2.2' apply false
+              id 'com.android.application' version '8.6.1' apply false
               id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
           }
           KMEOF
@@ -63,12 +63,12 @@ jobs:
 
           android {
               namespace 'com.kurdish.manhwareal'
-              compileSdk 34
+              compileSdk 35
 
               defaultConfig {
                   applicationId "com.kurdish.manhwareal"
                   minSdk 26
-                  targetSdk 34
+                  targetSdk 35
                   versionCode 1
                   versionName "1.0"
               }
@@ -109,6 +109,7 @@ jobs:
                   android:roundIcon="@mipmap/ic_launcher_round"
                   android:label="Kurdish Manhwa Real"
                   android:supportsRtl="true"
+                  android:usesCleartextTraffic="true"
                   android:theme="@style/Theme.AppCompat.NoActionBar">
 
                   <activity
@@ -855,6 +856,9 @@ jobs:
           import android.widget.TextView
           import android.widget.Toast
           import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.activity.OnBackPressedCallback
+          import androidx.core.view.ViewCompat
+          import androidx.core.view.WindowInsetsCompat
           import androidx.appcompat.app.AlertDialog
           import androidx.appcompat.app.AppCompatActivity
           import androidx.core.content.ContextCompat
@@ -868,6 +872,7 @@ jobs:
 
               private lateinit var discoverPage: LinearLayout
               private lateinit var translatePage: ScrollView
+              private lateinit var webTab: WebTab
               private lateinit var savedPage: LinearLayout
               private val navItems = ArrayList<LinearLayout>()
 
@@ -901,6 +906,9 @@ jobs:
 
               private val notificationPermission =
                   registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+                  private val imagePicker =
+                      registerForActivityResult(ActivityResultContracts.GetContent()) { uri -> if (uri != null) runImageSearch(uri) }
 
               private val captureLauncher =
                   registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -939,9 +947,23 @@ jobs:
                   pages.addView(discoverPage, FrameLayout.LayoutParams(MATCH, MATCH))
                   pages.addView(translatePage, FrameLayout.LayoutParams(MATCH, MATCH))
                   pages.addView(savedPage, FrameLayout.LayoutParams(MATCH, MATCH))
+                  webTab = WebTab(this)
+                  pages.addView(webTab.root, FrameLayout.LayoutParams(MATCH, MATCH))
 
                   root.addView(buildNav(), LinearLayout.LayoutParams(MATCH, WRAP))
                   setContentView(root)
+                  ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+                      val b = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+                      v.setPadding(b.left, b.top, b.right, b.bottom)
+                      WindowInsetsCompat.CONSUMED
+                  }
+                  onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                      override fun handleOnBackPressed() {
+                          if (webTab.root.visibility == View.VISIBLE && webTab.back()) return
+                          isEnabled = false
+                          onBackPressedDispatcher.onBackPressed()
+                      }
+                  })
 
                   if (Build.VERSION.SDK_INT >= 33 &&
                       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -966,7 +988,7 @@ jobs:
                   nav.orientation = LinearLayout.HORIZONTAL
                   nav.setBackgroundColor(Ui.SURFACE)
                   nav.setPadding(0, dp(6), 0, dp(6))
-                  val labels = listOf("✦" to "دۆزینەوە", "◉" to "وەرگێڕان", "♥" to "پاشەکەوت")
+                  val labels = listOf("✦" to "دۆزینەوە", "◉" to "وەرگێڕان", "♥" to "پاشەکەوت", "⊕" to "وێب")
                   for ((i, pair) in labels.withIndex()) {
                       val item = LinearLayout(this)
                       item.orientation = LinearLayout.VERTICAL
@@ -989,12 +1011,14 @@ jobs:
                   discoverPage.visibility = if (i == 0) View.VISIBLE else View.GONE
                   translatePage.visibility = if (i == 1) View.VISIBLE else View.GONE
                   savedPage.visibility = if (i == 2) View.VISIBLE else View.GONE
+                  webTab.root.visibility = if (i == 3) View.VISIBLE else View.GONE
                   for ((idx, item) in navItems.withIndex()) {
                       val color = if (idx == i) Ui.ACCENT2 else Ui.MUTED
                       for (k in 0 until item.childCount) (item.getChildAt(k) as TextView).setTextColor(color)
                   }
                   if (i == 2) refreshSaved()
                   if (i == 1) refreshTranslateUi()
+                  if (i == 3) webTab.onShown()
               }
 
               private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
@@ -1041,6 +1065,9 @@ jobs:
                   val tlp = LinearLayout.LayoutParams(0, WRAP, 1f)
                   tlp.marginStart = dp(10)
                   header.addView(titles, tlp)
+                  val camLp = LinearLayout.LayoutParams(WRAP, WRAP)
+                  camLp.marginEnd = dp(6)
+                  header.addView(Ui.button(this, "📷", false) { pickImage() }, camLp)
                   header.addView(Ui.button(this, "✦ AI", true) { showAiDialog() }, LinearLayout.LayoutParams(WRAP, WRAP))
                   col.addView(header, LinearLayout.LayoutParams(MATCH, WRAP))
 
@@ -1357,6 +1384,35 @@ jobs:
               }
 
               // ---------------- AI ----------------
+
+              private fun pickImage() {
+                  if (Store.apiKey.isBlank()) {
+                      showKeyDialog { imagePicker.launch("image/*") }
+                  } else {
+                      imagePicker.launch("image/*")
+                  }
+              }
+
+              private fun runImageSearch(uri: Uri) {
+                  selectTab(0)
+                  statusTv.text = "✦ AI وێنەکە دەپشکنێت..."
+                  Net.async(
+                      { Vision.identify(Vision.prepare(this, uri)) },
+                      { list ->
+                          if (list.isEmpty()) {
+                              statusTv.text = "AI نەیتوانی بیناسێتەوە، وێنەیەکی ڕوونتر تاقی بکەرەوە"
+                          } else {
+                              showCustom(list, "✦ ئەنجامی گەڕان بە وێنە")
+                          }
+                      },
+                      { err -> statusTv.text = "AI هەڵەی دا: " + err.take(140) }
+                  )
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  webTab.destroy()
+              }
 
               private fun showAiDialog() {
                   val dlg = AlertDialog.Builder(this).create()
@@ -2020,272 +2076,4 @@ jobs:
                       val top = (b.rect.top - padY).coerceAtLeast(0)
                       val right = (b.rect.right + padX).coerceAtMost(screenW)
                       val bottom = (b.rect.bottom + padY).coerceAtMost(screenH)
-                      if (right <= left || bottom <= top) continue
-
-                      for ((layer, c) in containers.withIndex()) {
-                          val tv = TextView(this)
-                          tv.setAutoSizeTextTypeUniformWithConfiguration(6, 30, 1, TypedValue.COMPLEX_UNIT_SP)
-                          // تەنها چینی سەرەوە دەقی تێدایە؛ چینەکانی خوارەوە تەنها بۆ داپۆشین
-                          tv.text = if (layer == containers.size - 1) tr else ""
-                          tv.setTextColor(if (lum(b.bg) > 150) Color.BLACK else Color.WHITE)
-                          tv.typeface = Typeface.DEFAULT_BOLD
-                          tv.gravity = Gravity.CENTER
-                          tv.textDirection = View.TEXT_DIRECTION_RTL
-                          tv.includeFontPadding = false
-                          tv.setPadding(4, 2, 4, 2)
-                          tv.alpha = 1f
-                          val bgShape = GradientDrawable()
-                          bgShape.setColor(b.bg)
-                          bgShape.cornerRadius = 14f
-                          tv.background = bgShape
-
-                          val lp = FrameLayout.LayoutParams(right - left, bottom - top)
-                          lp.leftMargin = left - loc[0]
-                          lp.topMargin = top - loc[1]
-                          c.addView(tv, lp)
-                      }
-                      shown++
-                  }
-
-                  if (shown > 0) {
-                      overlayVisible = true
-                      // گۆڕانی وێنەکە بەهۆی نیشاندانی خۆمانەوە وەک سکڕۆڵ لەبەرچاو نەگیرێت
-                      suppressUntil = SystemClock.uptimeMillis() + 600
-                  }
-              }
-
-              private fun hideOverlay() {
-                  for (c in containers) c.removeAllViews()
-                  overlayVisible = false
-              }
-
-              private fun createNotificationChannel() {
-                  val channel = NotificationChannel(CHANNEL_ID, "Kurdish Manhwa Service", NotificationManager.IMPORTANCE_LOW)
-                  getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
-              }
-
-              override fun onDestroy() {
-                  super.onDestroy()
-                  started = false
-                  running = false
-                  handler.removeCallbacksAndMessages(null)
-                  orchestrator.shutdownNow()
-                  workers.shutdownNow()
-                  try { recognizer.close() } catch (_: Exception) {}
-                  virtualDisplay?.release()
-                  imageReader?.close()
-                  mediaProjection?.stop()
-                  lastBitmap?.recycle()
-                  lastBitmap = null
-                  for (c in containers) {
-                      try { windowManager?.removeView(c) } catch (_: Exception) {}
-                  }
-                  containers.clear()
-              }
-
-              override fun onBind(intent: Intent?): IBinder? = null
-
-              companion object {
-                  private const val TAG = "KurdishManhwa"
-                  private const val CHANNEL_ID = "KurdishManhwaChannel"
-                  @Volatile var running = false
-                  private const val OVERLAY_LAYERS = 3
-                  private const val SIG_W = 48
-                  private const val SIG_H = 96
-              }
-          }
-          KMEOF
-          mkdir -p $(dirname app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp)
-          base64 -d > app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp <<'KMEOF'
-          UklGRlI1AABXRUJQVlA4WAoAAAAQAAAAHwEAHwEAQUxQSJoEAAABt8KobSRJm1R17/Va/nwXQ0TkAQgoCJhiAY2uy82+DqSTaybp
-          BIn2HpR+q/Qy/ihDcds2jrX/3OlXfxExAXqMlGGX1BPO2SmpMfVYOx9QLXrrXCXYtptG0jQzMzN3DzMzoxNr/2uZooHSTw+WvhTR
-          fwhuJCmSnFPTsw2zx7D0ALNp2/z/e9oKOiYi1LhtG6EZ+4DLsZX1wrknHf91/NfxX4cEXQMTy9t799zfSiZJY7j73vbyxEBX5esZ
-          3zi7/fKTfHPi5W3fsJ6q1r9w+PCD1CWXhUdEM23dw1iXDw8PF/or91t56vBhqvsEpMKzffvOzD3VfbrSw8Oprur8Zl64+FpIFqnM
-          8kNikVxIvr640FOFpo7fClk2HfthQyHk2+OpitO39UhI98yfEnMn+Wirr7pMXPz0dX1jz8/qCPLTxYlqsnizNr/kT084yZuLFXT0
-          oPZVZ2yLmBv5oGIOZq3V/IztNlsdxq80HrXbwRWriD+zDoRlsA0TQR70VIDVF5ILtmnc+GIVvaGrwiRtnCR0g24r1b642jrmTFu4
-          9V4WOts+Tl420GZeS8qiIJbk9Qxku016VXQGXt03Wp6z7U95oxuskeeSRFWS+AhUS6nZND2z0hJQa8KS6hLkGkz7Lc6h6hT7MOsL
-          lcZAbtbq/NpObyhrdGGs4YWwxhe+kqk1+cIFlgH7+2tJUkbAkjgowxYQirSwYUy3FLywEBAJ825EbklBGHEGpJvhkgBJkoBjulZY
-          NkNzF8CbMmNh4b1YXG2chGTOVSg26/vQdAUQg1+KjIf5l8Dhen0fni6DYaVWmLZA8Qd70zPCOWE3Bke1FlUTEIyWsIr0GEXgmiDD
-          gPAPjZPINtPvqZTIBE29uVqLrZnT7nEObMJcuflai64J3e4ZPnZPtbEyBF4ixjS7JAU+TtN8a+WHbPiYfVB8C+aWJAGYJKbXMykR
-          Cj5Ta7JWO5ZrdSIJoyQnWm+PeycZI2M4gH/5SC5/lxqpHL263khGyehdKldbKTAT5hodSsIpiWv0RJDu+ETjS5x8zgI09rlPnwUp
-          kHKa0hGoAxDuL7H4P+n5KFi76aHuNZZqLdZmQpt1SVglcW1OpcDKearNXbwX7mr7p/iVZKyMr7p0GXif0bL3rm0l2CJN28JlCbSC
-          rsuOFGg5d3TZQ8x0uY/4wn1lj6dBzHW5g5jp8hbxiUIXgRxdDDE7/+x+//ivLT7nUp97jc+92Oddxeddzudd1+dfwOdfyedf0udf
-          m0cX4aOr8dFl+ej6fHShPLpiH126T1+DT18MT1+VT1+eT1+nT18wT1+5jy+Bj68Fjy+Kj68Ojy+Tj6+Xjy8cj6+gjy8lj6+pjy8u
-          j6+yjy83j6+7Ty4AT66ETy4JT66NTy4ST64WTy6bT64fTy4kT66oTy4tT64xTy42T666Ty4/D9cBDxcED1cGD5cID9cKDxcND1cP
-          D5cRD9cTDxcWD1cYD5caD9ccDxefDlchD5cjD9elDhcoD1eqDpcsD9euDhexDlezDpe1Dte3Dhe6Dlc8Dpe+zlwDOHMx2MxVYTOX
-          h81cJ+eedPzX8V/Hf50REFZQOCCSMAAAkIoAnQEqIAEgAT5tMJRHJCKiISk+yMiADYlmbuF0jgASFeoL6y+gxWn9N/ZP8Z6wOXPr
-          /yY+ovON/qfUv+n/YM/XXzyvVZ+5XqQ/cr9xvef/7Xqn/vXqM/2b/Semt7EH7wew7+4fp0ex//cP+z+5HwE/sd///YA/+3tk/wD/
-          /8Rx/ce37vT/GPlf8X/ef3P/w/tg40+rvUs+Xfcv93/gfPX/mf5DxL+L3+N6hH5F/Qf8z6JH1P/O7dDa/9Z6B3sH9e/4f+F/yPlv
-          /43oR9lf+l/fPgA/nf9e/5f9t9wf+F4Bv5H/fftd8AP9C/qv/p/zv+R+Ff+f/9H+Z83f6B/lv/L/sfgI/mn9p/7H989ub//+4b91
-          f//7vH7S//8pNeaCP4yDavNq80EfxkG1ebV5oI/jINq82rzQR/GP7+kEvXYToKJQ0mMEvqE1cKA39SeWrLoWA7NHmJCyd4NXmgj+
-          IYQPU90AD7P7mf9bq/vp6Q/1b0JBp8w+BamcyOEGlAkZPSrLYKqKQ5x6hTHb8QMUsZBl9X3glC7DsQRr9/YYNoeZg3HjNaVoC9l7
-          /B7daKnSy9rKobjviB5XJIVvb7VsNj0BJ71oYZwlkG7vwt1l8iKNv8n6TzaednqFKB9sGpSr5MPeT/KMSRgJjM+e0D9y50+1m6Lw
-          +NbL+dc6zFSCjOHjqbtvLGgbcbwGyGmI2QF6S6f7RblDwAPGKl/1hWP705ZcJZ2Zv9Mbd3bJmgAnvyfR20Aju4BI3Gkg9NOIG/aI
-          miUtvzTtgP7Fgnqxwl51jGdLt6JnU2k/RBZM3mnZwZLKlX6SgYvBWGdTm/IgbmbVjNsrLrGpyLNfhfdUEkbNP+Sb6IJkbbv+TaS7
-          tT5t0x6+N9X/NI1Py0QHWmrK8+YZ0c7odmkR5H3KISDIYW4u8p9e9HJFxUh93w1C8FWIZKW0k/4g2dyFZdZNNDQVFPQjX/rB8Tn8
-          egp+DGfbikR2Ezp2xOKokM72i5Hz2+l5p9ffV+x8ibE50DgDKQ6uH2hercg8t5HBRvdhhxxEm39UN4J1Jr0yWjWU4jbYKJzsZwT3
-          McWA04NGQb9hiYLaKYZA7jpHPWz5l0EXMWtr0/cVGVzKet6sSSfGApyv/JStpEJJG7XPkfuLIdXTXvwkRzQKOZqZS/UpIBg8QbQ1
-          SJiz5f4vDgVmApbgB5t/9cQQowtkC/Iwhwz2jMmQNd3xbBtH4QDMw92NC+LjbmdOFLwAwryGxhl08ql81KayDawMLmcMEwJdQyfU
-          Et4cn/CIPl1Bx/XbJ0QUk411QZQbn+fdPtEUr5+dDiL28ycFBd7G584fTw2lNG+J3R2GNBIG9xWouXZfdeYzvf+0UretLwYwbbWQ
-          JDnIiQXWKLPSwJog041NxV3/z2TjkDb082rzQSsYZkEMZQYCjNEyZm26dMvq1bDiY6mZ/+LqE7WXWKR/GQbV5tfZL5zQnm1eaCP4
-          yDavNq80EfxkG1ebV5noAAD++4jgAAE7NWcXqR2bc5F5mlWgBgVwA3Pl9G4uka9x91azF4+XyRgNQxKWTdtqXpPN3Qz2NplSgZZe
-          ucHIrz9+gJ8hScy8cmmWV124PoISN79fvNhdmntxS2Roy2omxjHCZf22urcM9jvOR/107rInrBjDOaQincAUmbCeIR/1Di73TpKp
-          GWoMUgH0NVxtpK6PSGuzmaciiOhwdh62Q6TQzFqQS+Lz3LQ9nxZ3Uo3f98sFNysBXU1NQEooU4B5zMOhEoMczvhN68qizi/rufKW
-          1el1+56Nx3nIDlFNqOBdrriEBOXKaB0O0Zbs1b7vcYfmXEB36znS1+kC5N2phyIOtu+43idLWoybUd4FQDN4rjekGn8Im1vyGccC
-          u7n+Tt2ulOirNcih87pY18N9ZZ6fIwe7J4clLQwXho2rVh+iYLtkVUo+88B/9yWAXeSsSgn3k6fx7rfuEcjIps1AnogGETYAko5X
-          hNf/Y60s/GvR7WHzafxTm9SJRj/YZT/zoH+aV7zMjdA3nM6CZ1m74B7cWa/ebtLx1PjbkAySx6ztXrRTpgSoCNi4sB1v1YMjMv2h
-          qizu/MeN+c8enGciez8j08bRoB6dHcyUkKxYev94waXc+Q+wHPYYfIb8FjN1ECYwvysDMVcjxklbXYc4QquI0fM9lWfdhQw5c3Of
-          Qthld0r/Qd6F4rpsiL7SR/RIdkcZE8w9Vut8kCY2fHnF5+wRgC4oKMonBrSlgzkmivE7bs1MeutJbn8ze479Ftcm04Rkq2/ZFuug
-          J8qADfoJZ5ZCsFtisC5nIjIZlBAfWK5Cgap+Il+yWIDdjXFrKIVSQFYdRXp0077ZZ5BV7ndNT0U7KEayPtbWzTmHTy+fbPQ5brOD
-          /z6ZeR1zP2Gqv2vx+cN6f0y8y8EkXqGBI/wSCvBwThvw2XimrFFaEHQ/qMRVkILm6jCLLZEtEihetp+4xsshCcTdF0kLfoGnmG4F
-          DkfypIhqAfQ1oJBdVUT1niMRAvA7GNSFRzJeG9laF0P29x6RrljjUcO6FC4nnr1P9xJkdDs3P501Wr3yPu3Mn4WzYDq5CZosy+9q
-          77HP5+RUp6pDoDRnnqFCyy92cTOznF9J1MPFHDcRhDPr+I14jqviQqS8h0T0EeZ5V5eRfXEDzX8ZgYOmHEApRMp6JR32N2X2noBR
-          e9v/38B59vaQv35exTh/FE+WRuWhrC2tmGJOLqBBGiz1jvJX0/rY9+KiBdld7iBRdXK76IH0LHmrU0/3u3NUqAtxqI+HBXrs8W1w
-          yCBqGk/z7yU8/ZRCo0AIJTW0VRSf6gTO2gHdQ41bhtHEtYL6l3hd3CTHuQM9SpVQNbwoRIUb7A1HJLTYdRBiwu5Tx0SN9cc6Ga1u
-          J9zz52Am09QSFh/IlzC4+yHLAcbljRIYYsXzX9UV+EuzwkbdfoxrTSJqgfuEcSxSa6HRf9EVl797QgA7WSCYx185B2iiYQBLjUXa
-          DdqyX7wj2pazTy/VxhTrsKwu0HVv1PQOmXo6bmFJBTcI8a2keZovMDX4YkGnkDevLbbs2LjsZAdFytuJJHn7n5NpuYwFgnW0cEeD
-          bGAOYWXEbn2Xbm+EM5gwvkehmY/gKjfbkOabCWqZVduedduLD5zlk4lRnj5Xv/1CwyJ2btC+CuaxHhE5h0xyFXmqegHHbdQVxUog
-          LX9IZsJ9LUKmX2eudL04kdz893zFTXXujWxOeBu9hZIg2kTLfQD+iqAyVvzFYxvofBo6pFxpPhDE8LT1foiL0gqkp7CGUqNjM7qO
-          nCx+7MztnA18eelW6lEp9XSRX2Ey5r2lm/7QCb202vWSzAp0UYTtnY5fCV327T4H0w5fcJrSUkahVD+L7I2QIw8yVITz7Vswr/lU
-          qYt89/5lKWH0imw00AGiwnQYgcPgKWFprhpILQfHb+RJ5u8JvTPmXtq+XhZY9PtSJnqctElSDalfa/SaPl/TrsR8D7i0usz+vHnq
-          XClwGjpcaUOEwdfUKQPV3R9hyD8L97UntxOqZ24hp/+P2sJJV4HJx/9lG3pAhW9e1vXbfbR8nWWK7GPTHQM9xf2pWO2rhXZZ5bOY
-          nRbc+kzQtNh+fc/Cm7+WWxZwWeszp+5B2y7RKE0+WynaFS8TDmr0BaSy7LAR3E0XFf3TbraSRPQxUymoSNK33YdJvzou+fhJkbZq
-          F8pPvaQYtQG6e6kODbkfOhiQA7B4+YrI6EDrv+e60QGehfb0HXlluzjzRgGRDY5rcf/r+gWBjkxzErrpn3o20Ku2X7Db3tJuOBnC
-          86A9rj/Cz7noVY4tILRN/tVrhD9z5rYUWX86J1wsMOSnU8Kjw5oKaal174HmIPaLjbbJH4sZc3NVHeWlOwspt0SDl9hWP1KMH3LJ
-          VkXPwNlMwwd5WD22qi8G0UDth31Hkdyw2jSXUtyZ1EmLnYgS7MSmbJyhz9nGURM+cEKqJ/ChNvYdQXD/Cs3Rsh7ZMIYp+OM5/AFb
-          kbPm+zzHkrR7AaMvTgoMahbr6/TlLKcI8rH34RmyY+AjV5y68aoih+UiueG24lI+oF3VNsmsP0dLsULTXd/9ZeczaNpFsDS7EpDB
-          BEJ6oTzs63OrIpVI9hRxgWtynuimQBJ3TfmsDAczWxOB41iZba+GcGRkeUKaqQD27f4Jm4ve/Jo0V75VtGeM+FhkNx3QYJ4/414d
-          75rgiSMddXo/mJIIgZkM7stl0sNctptJCDWM+SWy98ErDNItqObMXUwUii4gQYeZRsYG2HX2Gl2ZLpmHXBepPNzCSdpfo/iAWMEO
-          F1DfdDa/bja0Cq3hU8fT5lIRdfoUS+X8vB78HyaIfGvnYCZ9LBrUDwqt3eXY3z65doJS5f0njLNoPFHzi88xjFay7YulCbtmM77K
-          Ea3pSXTmAsgGJwSIAQ9mhnbTnKwNwfNkY3feA4UKH5CxwEbjV014LuV8PKvqeRp6xxwduFHjtzhxWuHvwWm+oqVyx1vIKFEcwIlW
-          xAyoIyUq+sZIVGIbk3iQVgQE0iaoPcD+Yh7pvnbt/+0ClMO2dt+ns88ZEEz1c1hXCEOKHKcOCapwBv/PLiLkDHsMxFgDuOVBiWe3
-          oULMVmi2qG1yKSkTNjfk+QrrCpT6iO7a/MjhNoRDvQfsiGM4AT6pmZcoEEQ3cDzDFa0umD7WFX4tn3g3Q2Sysum0zHK79EhNhOLH
-          hpyxEAfRb1qeCpcU6ayOvWU/t3tDkQO259TAK0hC4ZT56bt1gZsvwoe+WuCAjKy40jMYqZRm5NKhAX/dh+qBGKr2h/d8rFdSveff
-          u1ql1tyfHh7fHn+YAzjdJfHrNmG3rZBMHWrCOgaVcOvpdRYBzTlpE4Wh1K8qlc6Swuu1F2VS6IlduTrex93TxWIXw+OlR0N0QfKi
-          K0BClWUhKbhoSYuE+KtA7TBw+IwLPTd/XGepYw6NOiopfVho2/YFzn9nPv65Of3pQ8Up7++jMxMOrKl1J8OyNLQvXBYdtrNKnjwT
-          +FNtuX2WVz2FLxT1aWk80fl4Md3UkExswRF9I6Fen7xUS9k7vPDcwGTQAJPymgFbCANB8ifuemMExWTNXWPOYGMJ4OfFHtYUYRv6
-          NzcmszurRAZyFqT3RLTjxTbVn/Pp907SK9D3eSB5iLSK1JMxxk17Pv+78ij+rTTsi/4miaz9SUq4YiunCdFmlA4fWwhb6SLSPKnW
-          L0uLfmr4jQqvs/XRpv7+VTIM7AuOsJn131C2UqicUNEFHBNXO+1lvXh1BrqYfN85txzLVBew1fFWG6OTgfk6CIqOdG+QI+PO/T7P
-          0PJH+7VPQC6fFb8V56oLr7LcgCp1XS2ocjbeuAsg3sXkqprn3q4/EnljE8wRPSmYbbGuIdteMwJvQjufymckNZv8gYdQg1USYVzb
-          jP7MWR7N3BQwSJwKKbR0N+zZH3p/CsYcZpBX+TqUbVfBvLtTOUR+IhesVQMScbDI7LtahJrIUK3tieoNC2yNP1Q0GNn2XimJHJ+p
-          6p+S0heJcohrAp2021bXfKk57Dkt68SDywWZF9kPn7nTscdKikClkQ+hh2kYEdaeOSohZU7jL6VzSWaVeV7hTrKqSmkKfzIU1mz/
-          yPS6c61y8+IsHLD/CTy856tnkh5qqBo2lKyuGrDYbk29Wx4RXqrXxnyDTtwCjvNaAB7QeNDNtjIXug15REq7Sq0GZAG0sQOb2t1N
-          20YU1E0vrah697FGm+CXLRajhLMi9FaeIF1TpISQM9qtc6/p+maw474tN/IA/mOHoq8sgl8q83Occ2J+BwP8dbAzy/+KbXuWdr5M
-          AWx3KdAOOmmN8pewBaQ2wzOvJDoJZImfGupQTsHHpTT+OOs8lW2iWsn6vQ1EjVzeBki5rEJpOMDGICWidPFgVWHKl/yggEKwYkGG
-          wBJeGrGn9reN5yPMPut09duSvxidmcXnQAuOuxP0sMuyw312BTU4y7Tr7+2AwbFediOp5Wry/2lgDNdlV0lYlbGWcVY0GSWpjL2s
-          P7jqsW+YAnh8/Nafee4rNt0DKgXZJHGLFT7aBCJAsy+Tvqm7BzQfBjQrDyjU08yqGqvdzV2q8g1/nm0aepksn9xBZhwPuMVvC24H
-          OPFtu26EIW0gYT7Q1xGniXf9DAlGZjj3XoREU+SFrIn1XN8H1lxATkbmhkD27QpSq2Pjm2wVy+WB7uGYM06Cl3eXYi/OpcDSLsRx
-          /QghnihrqfyqfzcEo83SczXNQR3CnB3vsfUfVGOUB0brr6HFgRUz6Gbpi22XEQGNTx7mfmZq8biEUMR+Li8VDVnb3t51Pba92dSb
-          qiOWC50QgPGVlyLnjfe6PeEgbdQsSgw/hzYyRt3QqOk2GnNfnP+1BNQXXW6N8TJuy5AgNyZuATAxybN2OaJXUybFLwwiuYHeiv9U
-          4rkoNxr+lDeKixD+9Z7SVe90ZLsCAX0dRKg0FxsFl8MxDZIMPw39klieVonoIOKwk9VvnwdIwYeMsio9ABLob5Reb+B+eHlNif6i
-          LYskCv99k+muBDYeyejRLX5CaV3vh2n0MZxQXMerX2vorjj+MVP+yb6wYNBA6Dreq+G+CquzkVajIh+VfPsFj0HHrxcLasZ1vz/b
-          C0WUmeTeHMwobRHT+kjZDfKazbzW1BLFYhTRZQdwQNKrRR7sU7Oa69m8ShMD6wkP+cB/eN+TfnZJCcsWs3yRNi5VqJOCucJ+7WDJ
-          goqwH3kJLq0xKeJPAa6qC8qdAlsfDeSZtYYZt/X99lXa+xilDmcF5WnHwBGO55ULAOsxOciFtv6iWR74BGk8ZdyIHgPhySzVPjbC
-          wf8JGpYTruLJMYmxOEyJS7vEgsgzOnpSNt2J4VcN1bHWGdDZ6VTiEFvUH8FgirdeKxIRDq5Sge4hA7LgsZcu3Ap0GawuK82diG5B
-          530APBylDOrqUeJCec1zjuK2sX0dbyAWeeBg4q2ubq4Xn2uPtyBdTeb85mhBxVcG+7bV0hxSodreMVp6yUq3cgqaYd89uCto0XcY
-          DbkQ7Hbi09ml56h9VHUg5XuSpMpoltZ2MnbOe7dW7zsevVkHf7/JOQ3waLAdToHX5Gih7tfvEt605iSoA1viGxKoVbXFn4vLn+pt
-          almL2Mir+akC91EzWdwJifXQLz1JCFkUqEfi+MyejpQUCe5rgof7QYFyUF798O2stqnPyaOB+lHoQRGAti80jpM8FUbypmBMW2c4
-          4/Dfi8P7mjITP8rW9nqsIAGws1zEGz301N8weQa8H5p+rJW9XKvTYKZFzTkSLRsieY0/RZAwogv9no7FcXy9pIpNIDsW9rjDJVF+
-          GAKQidy2v+KVFDMwq8IPS3gpDn5sRZEkBs7+H3SxOyRCotc3VY5RbjV7CxAJg1vqfTLXyAJ9rJIfKFBu6JZhB8RbGN1TMUD0Oww3
-          SkvBKf8Y3MMIorHa7CK5NYk38Fh7rXU1RbOh5QkoG676L+dDX+cFJ6BQHiENfeYOoAHlF217vtZZfMhkkP7NncaIb4WBDiIVE8pi
-          YSp4p057SyPyc+PNnWoT0Otcu+ltj0hZXZWUowSCiGxss5ffyk1bVoXwEm1pyIxq0aS3mCrQ2iHdACkLoxVn91JOelBZ3Z8P+cpe
-          7UL9925gZki4/m3UX8u8YSldgrRqG7zOCEoEvIaGrwD5hzIbBuPL4UHHYl/0NWkX1rLrLs8qVr0mNe8CAcUxRtYeyL8ZfEfNS/D2
-          jiV0ROTj2NntJNXvatWjSu56jrOAyfYLrABj1MQjvVfloCctPGgsq9oIhvk/xBqgq5ruC8iqjbRRMyVeqAQjimYyU5tWVRrEh9g/
-          o8Dvg+FC1xFTjzcwSziPO7tegQ3YxC3o1Y5RbUNenulQRIA7eCBudOUrh/snDbpYzfvqVMhEcQyC/PV48nxc2PzgdPrtyB25mOXs
-          twZx8DaEo3ClXMimQiNP9fTMbUaaB6A+vCz7qVFlSG3kXpAwpezpJ84Rsu7+eWeOZizROh+eeB7hOaoFJyQEE7zY+c3kmyBpqi5y
-          m7DiPJc25PU3QSfIMPi8mZgt5Gm1CdAVTOnRuyeooQe6GDx91GLJBEZDy5g/LWeKFegqmkfhGg2Om3yH9OhPn9vcaxZ3ZkY4MX/H
-          /YHrzJEuxDf55xMMZCw49QICnELBpkbl+OP96vqwofE7A/rgqB5ZWDeHZSPfv1RGIyRLHqdV7SwTR5vAWDx2pw4DwmjNMBeygLKo
-          1zVM/6BlulvrM7cbtHasO5ihBDSmwsIwNueSDjVS/pevEFBBTM6ScHJSMWi8crxYxFFpKKSsQUlR+uXdgy0+lKq2X4MDbJEM4ZYt
-          WGnuknr2jLaUOdCZJCtIFzzHwgvZbC3ih7zoGL3XmJOhmpg978aOQwWmdWh3Y1L9Kf8041lEtH1rR9OlLraHiWFeZM4xTIkflwdU
-          hmMJNrbCBQUOD13SBz24d6WKMbrvAqX6aKNOdGPV719Fgw3o532ojFfTr68cYS3EjmZVhQ/Zbf3ebAi3IsTZprpQKMgYozQlsibu
-          3KSVDkPhQnP9HUhnyoFxE5bXa0KrJm+jckod5x065ATYbtPCI3wvfpNyWCpxnxl3WK7/QXlKy/9n18VZV4gbCrcagMs0y10rHelY
-          Hc+MfbxnfH/UsoVIcgshGE+Bfzus2wHR+Az6cdWkHvqaNcgidy9SxM9nai2mGBH7OaLpbEcukIqbrapKeNxTtRlejx7JFvqr64Cb
-          y1R5vjBNHaPScuUIg95p5ummxgpNb1WmHe2tOJgowgErxD1yz9j54KyNUSZgnxYmCPSzRyadqdl3VL4uGO+vhiBHOGIEk/YNbV/t
-          T/vT2Bgk17LnU1mrQH0PIHMtWE6iOC+u0S8TN8v4WiKVKlkKDWIlQPbrzHassAWXm+m5OwLHQIwrz9dMT5wFXR8shhnjH0aot6t2
-          fPG9TwBgk61a4uSmbNWyjmXvpjoXCdUsWD2oP+29mw16OZomOl8LS7QgqjkGBL62BNU1Qlc0taAWd1NOhmZk4jN6Qh0KFUV/7YRl
-          9ow/tsr3bOt7VaK37is9jKV7OHutgm3iRUNFGjnAtlcqszw25hRumEgcFusMChA+bQlGCuFLeiChfksdN42e2nXOcVdbFtq62OYd
-          K9nuOIrQHRwCC4VuFzI8TX9vJIDduCHRGu3QX4eQwaC6U4osVmfqwCOdYw7TinA1fAabpQOOJ+68epS+UiRypJuG2KwlHM+bEEGd
-          iqTTsvv6dnt/L2Fxjc1d7LRuVQygojWPyAnH+OL5FWN9yZOzREwziFsCMwMe08fZN+iSfRlEUiVKVrMqnkaEghiZ9PbYYzn+FhiB
-          U82nkzLSkMqNc6ch9hESUvltqTQ2oWGNnF3Qq0/2bZpdrGBDI5r4HxoQzwJ3dKJh2SdBSuP3q6jZ0I+gAGIY4CnCM+Tp0Mu6RKeq
-          XyjIVP9nlK70G7vVQGtziDGFJ4dCSkIpUhGlDJDKb8YZ0HNfj48pJ5S6ek06h1xaA5RE7ACd3a6XksNucJC8O7PdF0Kz0dXsvgRc
-          EA4xSnZr5IL25sJJOj+kmtBwqOFSxj90nbmG5MVBMFk/vY1oAi6l7YEMK0T1VAwefkt6TQadRHnoNq5f5BikZycdvGRGgI8ks2R3
-          bBUwwh/51l5RWwFor8oBgG8u7bCTxdz9XsHToIZOipjHcpwnoMPmWerDpjpA/YW2tCRq8neEpJAWYoew5brPf/Mvm1VbFneoYzRS
-          bNHQJqCyLhzWzD1SCVkX9KGDkKF0aBDoZSr1K5eNJp2XMivF6unSIYXkdcZTuyGZCKyN7LUWHQBkaN6JFqI2yXzL75l7+mpSMVvz
-          +CXh3mDIv7wXcWYn1V/LxKx8lIWXQ0PfMZINlkY4oF/dEnJWOElqBFfRP96j3rS8DFaOfvuf5hiUcO9Wtz5qCaLQok8lTTg5RJfr
-          wNdJLPqK7wUI4uBCZTL+s90J//91t0nD5Ls7zGELlQ/f6OgXqTdgXgDfEnybYJJT1M6+n7NzZdHYpdBifQ/EE73xJdb1Gw6Eycl0
-          /jlYL4uxfUYuOPelogc0nAuKfXGPiKn5KgmN7iFIjK2qP09lFWev7eT8OszDwOm2j4O+TXxvzDimNqAgxLKyCYfECxutjzIPHuz/
-          vDbcjY3BgQYNRiEXZMRWZo006EAnDQEss8Kkmyt3zHZQ/fxFcCBGuVXjYD3Iwux26UQQy0A48X5qVGTIlUlNyrYM4kuHSCwZZIl2
-          vl4K/KgcpCPvV3gZijsqEnkvE4fLum5wnnaYRvhz9ZgZyI+cDJ0o6BNfQiqyw94YAAN9vRAZ9B/jbihmySWMR6KV6WlvPyVmq7d4
-          /8GpOPY2pBFXhy9KtTaFrXFfFaMwQGzyyfcPCzSZMCfZFW5gAb6iwtP38ruBdtjtxg5yNGMjsgJW6HfpYe5DyqvNiz8H0ZfPLCH3
-          xfnN94RhwnONKH5DvDnt85UohxqXTZEZwC9mfDEYQxstM2IhaVHidcl5Op8dB55NQSPymXbfNfkggEuqL/yt5AFryTXFxZ2V0tg7
-          DsvVN3TGmdtuJJboALD4Q7az+EZH/iNT/9OMLalbSs47hWgo1Dh8Gr+zzkx7gNVuv8kB+GrZbqGoxWI7XeRQhdzzAYoKMCbTWy8Z
-          e8Gb+pGXvyk4fuNYCQqFWdh8TKri5u/4ahLBp/I6rMAFoZHqq10+TgHbo1RJfoUnOajBwf0VCtdlsKv1ksG3VvwwVQBPMSVT4eMO
-          IjBti10A0IOZhEctgTz8W9jFiv78r2uhXV4P1gl8fjUQrLQKsXnajwkHRp7l8Si2WKx6bON1/7w8gbnxmA8upiNZfRRNBHsvchI5
-          5SLCJdp+niMISOoNLfbEni20lgY6kqSJMuIchiqKBzFGb3/LzGgM1xNQbk3lGSnmYAJYovij0cu35Oa2FTeiTVTFBYPEpICCNL+k
-          woceAFI998GacDhH81F4jtu/w6JTRyHmjNMCgRBdkO2xPyU8kghQYqVJKD2rE9B83UDDlLicrhtn0ZyLnUVU4OIu3Zuzck6SZ54L
-          tGDYHuLB71g0xr8TsInaM9PpudKF+dxHwOOzZnCg6we3Px0UIbibwaRE2/pat4fgCYd3JGlerHFMqKvvvvBEa9IVvNaCFs3eepvd
-          hiv8FoGO1/446bO4y/3M7j6hNkVLoIk3C3uDsCpXaAZn8tHNcK1rgaTiNF3Gj+opxOiRZvZWg9ZcvTxIn9WMUMPrDMINjGBe870P
-          QnYO7h4llOTBUSe4UFb+undG1b9MUrOGIKdaN7IEC8LzXPOzjTCo/ODoiNPG8gtIGnrwjX/3MpWlG2ejL1+Br1YM8cRYKmleTPGn
-          ZQIbRAMgB1K/zlF0CgMjysL2H8DLLgfB2X+yBEXKdTEKdqJTSwA4mAA40H4HMk87H9ucjraibCZDXkKdi7xDbV/s5NTDEe0vf/Fp
-          fFPcVV7lFenJ/Kee/QobBtLsf27g2O4v/PVY87nWdFdxCJy96HRDqtMraJHHh4v8OjWB4jTQxJFYk2QTEWJZkhjgfx+0ZKdtfXUh
-          DipK1QoJG6QshTwEp7xeu5jL6hI3O3qf3z4IQ8ZE/iYaf5b0w9m4vNpS/aTe6xcgVFbWkTOlmFXWpAf3TpL+5neqZykm6ia16tfl
-          DntbpCFE/hzkw1KnxVijXzC7B8036D4BrgvAFveRtZx2fwp5BVoFRv4r7j3Xvr+fuomhp+o9TaWVs0hXvwQZHq/+UxJiDgh0CUR2
-          v95OJkXXILKwMAMTOP8ZM2p3M1GHRjsEhPRJaQP3EzeMJ3WaNd04sP0wRL9jG8+yysPoqTjH0Jub5mj+R5EslN6PPvB2RtGklvPr
-          XfBpCGupr/6QA0sNKJlnxnPOYLkMf789NfPgEDi9VfhTL9DWFuzM2izUvkf3ZrnHDOfSPTdMb21t8E0tVjtvexGbsyDer2IOBv9m
-          BwsNegiU252fG5q8lDMRNs6Cea9lKhs9LDlCy52EbUA2U3MA8izjh83XFrf8UHaXRlPL0wUNv+1SjHHtYWlCzS4M5Q1DIdqjql9D
-          1JJfx4CoyTwLBWIXaCVs9XWL1P9S9jykIbb2q1N4CJ7cOSmvzdVbUuoLCe3cJ3KIk5vFnPHxqX2+39GkCV1HgrgVeSipQnJPCZ3w
-          HyvRfQd/7FhuowULVM/hBPHn9+lDOtImlbf+x15xYHVpq6cIYnM/hyAd6guG1dmH6lGqV66fGvDnq14Os/XDQfWvnU/pKGFfMMp9
-          dP86u0pkGuxCYy7rwZR/ZdKXFzTJvTle3RoVroJV/lCpMT1RdvxOIo2ZfQtXcW5DBZFADmD0BXDDh9cjVRMhZPGst856WjtWV98Y
-          aB6Hkcu0yejfTTjmg5k7slZ23SHapaQX1EXdiFR/M8lVx4yFVRJCmFFIbcWxKgSC0FxJIW6B6cKDBWbPq4HJ1GfZlMx6pSuUyn41
-          U41DoY3AnfeKnmyKy1vILDdvgmXxB7VEJKEpF38cgm8AVB7ToOIJn1vKZfGx1gRY+7HlLNDUWn47hkbID/rFbWVhFl6+rBlaI4A5
-          +2xlgR3Q3K4O/hE4ZAIMlU8zKO7OUAdOH/T80g+M6uSGTcHzvhR76YiSDxxftK1mWV3Gqzr/X02YVwqu51/WbfpZJZJq8b/JQkYs
-          uhFWrKxDgPsdDiIk+68KBY3w5BmcpmP0mzBiZm9EBwcyZrueHgY7KbpcrClIHV23FxiQ+kg77X6p0bQGH42n8Ur0rGjLRleFtBCs
-          KlPUu4TT4cG/izzqEXsWtHe9mMTnuwHrlO73HScymiWYDEZLPVm+yFtBFPRXszo2uKuvPWlr8Gs7b9HzF4ygQX6KZfrPupm+oL7E
-          zoPmkrf59HkegpDDpW0mi9BjuNarv2mFj4VsEeJHSsLK5WIuF1MIpp+PQa5wnhFH6n3k1qYNJ5stWol8VjvNSLYYihZiIsxQrq3D
-          0AX6OzzR+9dbYBtSiKDQ9OlgSTXUmut5cPcm+8WhDUUZAxYdrp/ciqB2TTvym8R64QNnFMhsSC51FaKocPocVpe5nMUxfYN3Kn/S
-          8rY6phQdQ+uxjMQ9bdcoWnuZl59qssFhb9ML00m8eiOxKIU9x4befzyPkPi905gcPpi0SypVRl3raSpIB1fh8nWVXBE1Aie+WLDM
-          AYn7H1zC7DlmqG5kSnc0ftEIx7FPhGXOgPI0OnBgWujxu9YAt2jsbG/J4+f30e6Aab08MNSedk2Wroyunpc8XQuplS1UbcNRJH4Q
-          e6Co9vh/s2O1jB6E+yzvYBB1CDTozwwQl57JKtmx3lY4lpr6xgJXS9NeTDhcWsz5kToMGp43E5648nc9DvODtE6xIEMgVNY5wvkA
-          Hmx2lfd6ehwtKZsk1DaI6WV7GdD37Tz5QvxzOhxtjggp4zns3MwwLXH/eO3uM9dTST4Hn9q4ABAeKi3F7KKEfckywvevSyf58nmw
-          QuW1JmNudjqod6gHThm4AYKPb5Y+gdBQprwXiRykK/0U1gQOgJ3W6cjkjvwyN4yTOdQm+9TZIr+dA1yXygt0VRuet1KvkGXWBtb+
-          4KUWH1WegNLfxBB7OY5EAbqbDzQ6KLLvZnJ2lHOJ7ij8jvuYboUyno7PB/2G7Lkhwd/IL6so0jUF824Zp2UBdum//Zt/51RkChZN
-          WSNyjtDe3bkuHyR34i1L72+A0eqACOU+H2/xAkw4PrfACFsqadWZLeKiBkBEWqbx5X2O8DJil2Rpf12xppfcnAOgmcrDYm/xIO9e
-          445eNFojkjt/Z7hpv4LN2Jh5zrhI5KrDfCW4d9NJONDlIzvGofwjHzefEOtOmQGGBa8663pzRqacxeKBOPsz1pfsDcld2K3SY6sc
-          DuB0yHs8gqRTR9jGnc52bE5dQAEB7TP5d5Ptr1/gYSkWj4zfKHODLzHQTdvZOHaFgWqLRqCYu039hwHjKq71wXKhsuRSrZKinUO5
-          GZbCVr1+oztbAT1ccQpwHpJERSC/XtT4ZZczaj9V5ibDvSAAlQ3NsJ+mLyoE82RCnC/g3YXTjHTfUoLnqjG/s28QoPu/gTmha79B
-          LA0eXl9ufYe4L5xhwZCxO/lmKBg97Bj9O9TRpWrz/5ab/L2v3TwVDwG9k6frhg6m79afeN1ep7mhOOLazYn/t1geQLREj8YriwGh
-          iDjWm/wJhe09zkM9i5QP1vEqnCF/J4qVr/S+yZf88u8v2539HxKIG82CwrHTQcMAyokY54e6JEu/wuxg3GB4Q1MaUaybxRs8OJ+7
-          Hn9B4Dh93JUO+wL8wl2zOKtuQ+axG4UZ9AF6doaa9L51K/g//pjCv+hOrKIxXQO6FrqpAB6oMZRU63HQTr4LQLMfLMEToRwNRKQ/
-          r8rSpJkfVFO5v5kzuLozG9OSrQIUoDJ41CGbBCf8rQCkntkYzCibjxKVHRAansgYmuXEgZDPMO6qLV8qyI68U8zcFKlaoG8N5gt7
-          USNnOGxg9X6qzP01+1+9DOdw3B1MjSYcXJ9MBcbPnu8r2a9nKaGXRYSZPs15gMiGKFX7Xy2IJ2GO9uk7BwtxBaRqlKm73jatXOsp
-          ReinsY5CTW/QeA32sb+gz7rAky28Sn471gvIPnXk3M8Mc9D9t5sCpGpV1cAwEESUijD/3deYo8XJzUqNsKieoVJzXiIIE65iNBnr
-          n7l+Pc4i+mcKoQo1zPB+3dTX47fx5P9xtTkiEyh+mlCsTAqvua/Eb7nphY6kxcGq0k7fHf0/nx1j+XNMPqiSgXYGedJXDvtpXGJR
-          RD89lk2PRs0lPozdE+uIJUXL8pe6gqrUaOLYeTfE8xVa5Urw/D+j2AAqsKPGWvD9x0m2yDS9mxeygNhdldI780H8zsZ3MHyaRSir
-          endiiV2pf+2uo8rzTzKculK7dtpFnPgZASc3eHk/tY4+UpPSvZ8i3Lyc+ASd9rRph+Wco87k4rvL61wCLySg94ElXgqXY/Fj0ewv
-          qPrnqqejRQ2kHvfsWuHkonI8rqPuMfeJ9YAGAudt+kuNQth+4EyoxtvcyY9W3dZuqzkL1u5F0mP97Qh6cKDXLUxikCttDcpmcn2G
-          uaJyxoxG/tjuK5444o8QL75jPrIQ5/KH7m5AnUc9bNBIvms7gDm9FDhAabEXFjtf3Q5e3t1mw8/wKXxa6ifxEsa27Gbp5IDYQK41
-          80LFzZDjRXRp2nH9/7HiOm9k9+KahzgITVxVS3kGlM9QnG+Tyl2pRNtj9eq0jx205aPWQAVVfQtdc0znlGR2FNsSy3OKxGCT2d9z
-          ++kh77BPFFqTlfQE0+ZHbV6k4C5ty2XSs6BWWyh9ZjKaW22lLxtnc/PGWIsSynfXHntLE2Uxrz7ntPS18Kl3s51VOVgljfEdgz5S
-          +ss/bxUFfSlN31Y2HeDQWSxqExo8jx+Nq7ukgFEoM90DnZ4C7o02Q31svfCV3/tLLddDE0wIg4E0B2vGHHmMnxNlardpNIiYe34H
-          baJCBFivFQujsCY60jT8ID4+95cgDIthdE373mKztuBL0eLGJ3s8tsgM5x31K7bXupHhI9gqQ/zpH4l6aAFiQ+YtiOz8ZStF/vC2
-          oeIgTeIUJkpEleX6LHbGAsO2HJnZg3coL3KuLn5ZgLbbHZlm7dDusf7g4rM1HXtyddZQrpOLnsnwVYE7nCeOzuLfswQ6z8jn7a03
-          9c63iv7mWlAnn982TGY/24qsfJSirqJxXG3Vdw4R/K7+KC5INqDQhu9bIx2RfOxZUuKFdbb9t+Tz/oOXINRTltnfFgUf0VgFjEZy
-          VK6zlNzvSqoKbNUit0rCub0K/VEQvZYekTCOMjobDkkOC9lIvfLrEKZK+WdzlKk/xuvPCAy37Wi4xQejZ7U2AdAMPL0dReko5XOQ
-          bGI2Cbjt1OVfmDVLJnysARMbI3gRJqi/mTvfgpw7TzQSBQBFnn/NV4STjibixNfjE8PyQ2vEDdfA/C6csAx6ht/8pZiy7HvCRZ2w
-          OG268BZIM9g+L8flnPmePcQ+i9dIIqCWq8rVtA8P9sNRHs1MKR+U7H3aOXCScMGX1u0w7oX3R/LMI4QsL+nLkNj+kB21oEYUw49H
-          f9dqmY0b0dNTIlw50PXN+1/FUa9wCdrH66kMway4lVDpeo5cDqAYedc+McR2sgf1n18+aF1X/Z99xv0QW9H/OR56MkXiJi8FpYo0
-          PEsfP40jMQlT5S3Cd2hHFvSyMUO7nfSXHTsZD/EggGISXDbnMmI+ZUJRu3hM1QQ9W3IwlULCzpQ9aIc/O1oC3NY3IC+H5ys/Id0e
-          hG77qJM96oUf21qfV530LXG68Qbn/zoegyYdjICfQvzwkDyXd4zQAjpSHxOudp6ZyK88iKYCXw8RMuaQQ7qqfkoHHW33PR2nvaUh
-          ZKA4oFzrXBjzuuh0KF82YK6h//I7GBtLQkOIwitsXOcfikBAJst1h1f0qauCcN7p3Ze2XgAZG6gpZZ2AOi4WBOZf5+MhjfyYAACN
-          NTwNT075X0dNezhenGkdO2Cz2pI4m4+RK9dSzZsECOvbKV1Y47S5umORSa0Wko59LoO20ukQFNpdcPygpoprXzLDBFDjotJzIQNj
-          DIunmracSEZajBJloUFwuqKDAZib7Wu7juKyRdoFamYi9z4eQO8J1Aikr9PfSjooW5kbACCqOAMxycQ4o6A+Gb8ABDrhVInoeR/O
-          gAAAAAAAAAA=
-          KMEOF
-
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: KurdishManhwaReal-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+                      i
