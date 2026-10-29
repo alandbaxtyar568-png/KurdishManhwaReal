@@ -34,6 +34,22 @@ jobs:
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "KurdishManhwaReal"
+          include ':app'
+          KMEOF
+          mkdir -p $(dirname build.gradle)
+          cat > build.gradle <<'KMEOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+          }
+          KMEOF
+          mkdir -p $(dirname gradle.properties)
+          cat > gradle.properties <<'KMEOF'
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           kotlin.code.style=official
@@ -93,6 +109,161 @@ jobs:
                   android:roundIcon="@mipmap/ic_launcher_round"
                   android:label="Kurdish Manhwa Real"
                   android:supportsRtl="true"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".KurdishRealTimeTranslatorService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="mediaProjection" />
+              </application>
+
+          </manifest>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/values/ic_launcher_background.xml)
+          cat > app/src/main/res/values/ic_launcher_background.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#0B0F1A</color>
+          </resources>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml)
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml)
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Data.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/Data.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.content.Context
+          import android.content.SharedPreferences
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.os.Handler
+          import android.os.Looper
+          import android.text.Html
+          import android.util.LruCache
+          import android.widget.ImageView
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.util.concurrent.Callable
+          import java.util.concurrent.ExecutorService
+          import java.util.concurrent.Executors
+
+          private fun JSONObject.str(name: String): String = if (isNull(name)) "" else optString(name, "")
+
+          private fun JSONArray?.strings(): List<String> {
+              val out = ArrayList<String>()
+              if (this != null) {
+                  for (i in 0 until this.length()) out.add(this.optString(i, ""))
+              }
+              return out
+          }
+
+          data class Manhwa(
+              val id: Int,
+              val title: String,
+              val altTitle: String,
+              val cover: String,
+              val score: Int,
+              val popularity: Int,
+              val genres: List<String>,
+              val tags: List<String>,
+              val description: String,
+              val chapters: Int,
+              val status: String,
+              val year: Int,
+              val url: String,
+              var reason: String = ""
+          ) {
+              fun toJson(): JSONObject {
+                  val o = JSONObject()
+                  o.put("id", id)
+                  o.put("title", title)
+                  o.put("alt", altTitle)
+                  o.put("cover", cover)
+                  o.put("score", score)
+                  o.put("pop", popularity)
+                  o.put("genres", JSONArray(genres))
+                  o.put("tags", JSONArray(tags))
+                  o.put("desc", description)
+                  o.put("ch", chapters)
+                  o.put("status", status)
+                  o.put("year", year)
+                  o.put("url", url)
+                  return o
+              }
+
+              companion object {
+                  fun fromJson(o: JSONObject): Manhwa = Manhwa(
+                      id = o.optInt("id"),
+                      title = o.str("title"),
+                      altTitle = o.str("alt"),
+                      cover = o.str("cover"),
+                      score = o.optInt("score"),
+                      popularity = o.optInt("pop"),
+                      genres = o.optJSONArray("genres").strings(),
+                      tags = o.optJSONArray("tags").strings(),
+                      description = o.str("desc"),
+                      chapters = o.optInt("ch"),
+                      status = o.str("status"),
+                      year = o.optInt("year"),
+                      url = o.str("url")
+                  )
+              }
+          }
+
+          /** پاشەکەوتکردنی دڵخوازەکان، شاردراوەکان و تامی بەکارهێنەر (فێربوونی ناوخۆیی) */
+          object Store {
+              private var sp: SharedPreferences? = null
+              private var savedCache: MutableList<Manhwa>? = null
+              private var tasteCache: MutableMap<String, Double>? = null
+
+              fun init(ctx: Context) {
+                  if (sp == null) sp = ctx.applicationContext.getSharedPreferences("kmr_prefs", Context.MODE_PRIVATE)
+              }
+
+              private fun p(): SharedPreferences = sp!!
+
+              var apiKey: String
+                  get() = p().getString("gemini_key", "") ?: ""
+                  set(v) { p().edit().putString("gemini_key", v.trim()).apply() }
+
+              var model: String
+                  get() = p().getString("gemini_model", "gemini-flash-latest") ?: "gemini-flash-latest"
+                  set(v) { p().edit().putString("gemini_model", v.trim().ifEmpty { "gemini-flash-latest" }).apply() }
+
+              fun saved(): MutableList<Manhwa> {
+                  savedCache?.let { return it }
+                  val list = ArrayList<Manhwa>()
+                  try {
+                      val arr = JSONArray(p().getString("saved", "[]"))
                       for (i in 0 until arr.length()) list.add(Manhwa.fromJson(arr.getJSONObject(i)))
                   } catch (_: Exception) { }
                   savedCache = list
@@ -237,6 +408,17 @@ jobs:
                       val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
                       if (code !in 200..299) throw Exception("HTTP " + code + ": " + text.take(160))
                       return text
+                  } finally {
+                      conn.disconnect()
+                  }
+              }
+
+              private fun gql(query: String, vars: JSONObject): JSONObject {
+                  val body = JSONObject().put("query", query).put("variables", vars).toString()
+                  val resp = httpPost(
+                      "https://graphql.anilist.co", body,
+                      mapOf("Content-Type" to "application/json", "Accept" to "application/json")
+                  )
                   val root = JSONObject(resp)
                   if (root.isNull("data")) {
                       val errs = root.optJSONArray("errors")
@@ -269,6 +451,107 @@ jobs:
                   val desc = if (rawDesc.isBlank()) "" else Html.fromHtml(rawDesc, Html.FROM_HTML_MODE_LEGACY).toString().trim()
                   return Manhwa(
                       id = o.optInt("id"),
+                      title = title,
+                      altTitle = alt,
+                      cover = cover,
+                      score = o.optInt("averageScore"),
+                      popularity = o.optInt("popularity"),
+                      genres = o.optJSONArray("genres").strings(),
+                      tags = tags,
+                      description = desc,
+                      chapters = o.optInt("chapters"),
+                      status = o.str("status"),
+                      year = o.optJSONObject("startDate")?.optInt("year") ?: 0,
+                      url = o.str("siteUrl")
+                  )
+              }
+
+              fun discover(
+                  sort: String, genres: List<String>, search: String, status: String,
+                  page: Int, perPage: Int, minScore: Int, minPop: Int
+              ): List<Manhwa> {
+                  val v = JSONObject()
+                  v.put("page", page)
+                  v.put("perPage", perPage)
+                  v.put("sort", JSONArray().put(sort))
+                  if (genres.isNotEmpty()) v.put("genres", JSONArray(genres))
+                  if (search.isNotBlank()) v.put("search", search)
+                  if (status.isNotBlank()) v.put("status", status)
+                  if (minScore > 0) v.put("minScore", minScore)
+                  if (minPop > 0) v.put("minPop", minPop)
+                  val media = gql(Q_PAGE, v).getJSONObject("Page").getJSONArray("media")
+                  val out = ArrayList<Manhwa>()
+                  for (i in 0 until media.length()) {
+                      val m = parse(media.getJSONObject(i)) ?: continue
+                      out.add(m)
+                  }
+                  return out
+              }
+
+              fun findByTitle(title: String): Manhwa? =
+                  discover("SEARCH_MATCH", emptyList(), title, "", 1, 3, 0, 0).firstOrNull()
+
+              fun similar(id: Int): List<Manhwa> {
+                  val v = JSONObject().put("id", id)
+                  val nodes = gql(Q_SIMILAR, v).getJSONObject("Media").getJSONObject("recommendations").getJSONArray("nodes")
+                  val out = ArrayList<Manhwa>()
+                  for (i in 0 until nodes.length()) {
+                      val n = nodes.optJSONObject(i) ?: continue
+                      val mr = n.optJSONObject("mediaRecommendation") ?: continue
+                      val m = parse(mr) ?: continue
+                      out.add(m)
+                  }
+                  return out
+              }
+
+              /** AI: Gemini پێشنیار دەکات، پاشان لە AniList دەیاندۆزینەوە */
+              fun recommend(request: String): List<Manhwa> {
+                  val key = Store.apiKey
+                  if (key.isBlank()) throw Exception("کلیلی AI دانەنراوە")
+                  val liked = Store.saved().take(12).map { it.title }
+                  val avoid = Store.hiddenTitles()
+                  val prompt = "You are an expert on Korean manhwa and webtoons. The user describes what they want to read " +
+                      "(the request may be in Kurdish, Arabic, English or any other language). " +
+                      "Recommend 8 real, well-regarded manhwa that fit best, best match first. " +
+                      "Use the exact English or romanized title as listed on AniList.\n" +
+                      "User request: \"" + request + "\"\n" +
+                      "Titles the user already likes (match this taste): " + liked.joinToString("; ") + "\n" +
+                      "Titles to avoid: " + avoid.joinToString("; ") + "\n" +
+                      "Return ONLY a JSON array, no other text: " +
+                      "[{\"title\":\"...\",\"reason\":\"one short sentence in Kurdish Sorani (Arabic script) on why it fits\"}]"
+
+                  val part = JSONObject().put("text", prompt)
+                  val content = JSONObject().put("parts", JSONArray().put(part))
+                  val body = JSONObject()
+                      .put("contents", JSONArray().put(content))
+                      .put("generationConfig", JSONObject().put("temperature", 0.8).put("responseMimeType", "application/json"))
+
+                  val resp = httpPost(
+                      "https://generativelanguage.googleapis.com/v1beta/models/" + Store.model + ":generateContent",
+                      body.toString(),
+                      mapOf("Content-Type" to "application/json", "x-goog-api-key" to key)
+                  )
+                  val text = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
+                      .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                  val startIdx = text.indexOf('[')
+                  val endIdx = text.lastIndexOf(']')
+                  if (startIdx < 0 || endIdx <= startIdx) throw Exception("وەڵامی AI تێنەگەیشتم")
+                  val arr = JSONArray(text.substring(startIdx, endIdx + 1))
+
+                  val wanted = ArrayList<Pair<String, String>>()
+                  for (i in 0 until arr.length()) {
+                      val o = arr.optJSONObject(i) ?: continue
+                      val t = o.str("title")
+                      if (t.isNotBlank()) wanted.add(Pair(t, o.str("reason")))
+                  }
+
+                  val futures = wanted.map { w ->
+                      io.submit(Callable<Manhwa?> {
+                          try { findByTitle(w.first) } catch (ex: Exception) { null }
+                      })
+                  }
+                  val out = ArrayList<Manhwa>()
+                  val seen = HashSet<Int>()
                   for ((i, f) in futures.withIndex()) {
                       val m: Manhwa? = try { f.get() } catch (ex: Exception) { null }
                       if (m != null && seen.add(m.id)) {
@@ -313,6 +596,20 @@ jobs:
                   iv.tag = url
                   if (url.isBlank()) {
                       iv.setImageDrawable(null)
+                      return
+                  }
+                  val c = cache.get(url)
+                  if (c != null) {
+                      iv.setImageBitmap(c)
+                      return
+                  }
+                  iv.setImageDrawable(null)
+                  io.execute {
+                      try {
+                          val conn = URL(url).openConnection() as HttpURLConnection
+                          conn.connectTimeout = 8000
+                          conn.readTimeout = 8000
+                          val bmp = conn.inputStream.use { BitmapFactory.decodeStream(it) }
                           if (bmp != null) {
                               cache.put(url, bmp)
                               ui.post { if (iv.tag == url) iv.setImageBitmap(bmp) }
@@ -398,6 +695,11 @@ jobs:
 
               fun edit(c: Context, hint: String): EditText {
                   val e = EditText(c)
+                  e.hint = hint
+                  e.setHintTextColor(MUTED)
+                  e.setTextColor(TEXT)
+                  e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                  e.background = round(c, SURFACE2, 14)
                   e.setPadding(dp(c, 14), dp(c, 12), dp(c, 14), dp(c, 12))
                   return e
               }
@@ -444,6 +746,20 @@ jobs:
 
                   val frame = FrameLayout(ctx)
                   val cover = ImageView(ctx)
+                  cover.scaleType = ImageView.ScaleType.CENTER_CROP
+                  cover.setBackgroundColor(Ui.SURFACE2)
+                  frame.addView(cover, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 230)))
+
+                  val score = Ui.tv(ctx, "", 12f, Color.WHITE, true)
+                  score.background = Ui.round(ctx, 0xCC000000.toInt(), 10)
+                  score.setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 3), Ui.dp(ctx, 8), Ui.dp(ctx, 3))
+                  val slp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START)
+                  slp.setMargins(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
+                  frame.addView(score, slp)
+
+                  val heart = Ui.tv(ctx, "♡", 18f, Color.WHITE, true)
+                  heart.gravity = Gravity.CENTER
+                  heart.background = Ui.round(ctx, 0xCC000000.toInt(), 18)
                   val hlp = FrameLayout.LayoutParams(Ui.dp(ctx, 36), Ui.dp(ctx, 36), Gravity.TOP or Gravity.END)
                   hlp.setMargins(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
                   frame.addView(heart, hlp)
@@ -476,6 +792,13 @@ jobs:
                   val vh = VH(card, cover, title, meta, reason, score, heart, hide)
                   card.setOnClickListener {
                       val p = vh.bindingAdapterPosition
+                      if (p != RecyclerView.NO_POSITION) onOpen(items[p])
+                  }
+                  heart.setOnClickListener {
+                      val p = vh.bindingAdapterPosition
+                      if (p != RecyclerView.NO_POSITION) onHeart(items[p])
+                  }
+                  hide.setOnClickListener {
                       val p = vh.bindingAdapterPosition
                       if (p != RecyclerView.NO_POSITION) onHide(items[p])
                   }
@@ -547,6 +870,26 @@ jobs:
 
           class MainActivity : AppCompatActivity() {
 
+              private lateinit var discoverPage: LinearLayout
+              private lateinit var translatePage: ScrollView
+              private lateinit var webTab: WebTab
+              private lateinit var savedPage: LinearLayout
+              private val navItems = ArrayList<LinearLayout>()
+
+              private lateinit var discoverAdapter: CardAdapter
+              private lateinit var savedAdapter: CardAdapter
+              private lateinit var discoverRv: RecyclerView
+              private lateinit var statusTv: TextView
+              private lateinit var searchEt: EditText
+              private lateinit var savedEmpty: TextView
+              private lateinit var startBtn: TextView
+              private lateinit var translateStatus: TextView
+
+              private val modeChips = ArrayList<TextView>()
+              private val genreChips = HashMap<String, TextView>()
+              private val selectedGenres = LinkedHashSet<String>()
+
+              private var mode = 0
               private var page = 1
               private var loading = false
               private var hasMore = true
@@ -575,6 +918,27 @@ jobs:
                           serviceIntent.putExtra("RESULT_CODE", result.resultCode)
                           serviceIntent.putExtra("DATA_INTENT", data)
                           ContextCompat.startForegroundService(this, serviceIntent)
+                          Toast.makeText(this, "ئێستا بڕۆ ناو مانگاکەت، خۆکارانە وەردەگێڕدرێت!", Toast.LENGTH_LONG).show()
+                          Net.ui.postDelayed({ refreshTranslateUi() }, 700)
+                          moveTaskToBack(true)
+                      }
+                  }
+
+              private fun dp(v: Int): Int = Ui.dp(this, v)
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  Store.init(this)
+                  window.setBackgroundDrawable(ColorDrawable(Ui.BG))
+                  window.statusBarColor = Ui.BG
+                  window.navigationBarColor = Ui.SURFACE
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.setBackgroundColor(Ui.BG)
+                  root.layoutDirection = View.LAYOUT_DIRECTION_RTL
+
+                  val pages = FrameLayout(this)
                   root.addView(pages, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
                   discoverPage = buildDiscover()
@@ -594,6 +958,40 @@ jobs:
                       WindowInsetsCompat.CONSUMED
                   }
                   onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                      override fun handleOnBackPressed() {
+                          if (webTab.root.visibility == View.VISIBLE && webTab.back()) return
+                          isEnabled = false
+                          onBackPressedDispatcher.onBackPressed()
+                      }
+                  })
+
+                  if (Build.VERSION.SDK_INT >= 33 &&
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                  ) {
+                      notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                  }
+
+                  selectTab(0)
+                  styleModeChips()
+                  reload()
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  refreshTranslateUi()
+              }
+
+              // ---------------- ناڤیگەیشن ----------------
+
+              private fun buildNav(): LinearLayout {
+                  val nav = LinearLayout(this)
+                  nav.orientation = LinearLayout.HORIZONTAL
+                  nav.setBackgroundColor(Ui.SURFACE)
+                  nav.setPadding(0, dp(6), 0, dp(6))
+                  val labels = listOf("✦" to "دۆزینەوە", "◉" to "وەرگێڕان", "♥" to "پاشەکەوت", "⊕" to "وێب")
+                  for ((i, pair) in labels.withIndex()) {
+                      val item = LinearLayout(this)
+                      item.orientation = LinearLayout.VERTICAL
                       item.gravity = Gravity.CENTER
                       item.setPadding(0, dp(4), 0, dp(4))
                       val icon = Ui.tv(this, pair.first, 20f, Ui.MUTED, true)
@@ -623,6 +1021,47 @@ jobs:
                   if (i == 3) webTab.onShown()
               }
 
+              private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+              private fun hideKeyboard() {
+                  val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                  imm.hideSoftInputFromWindow(searchEt.windowToken, 0)
+              }
+
+              // ---------------- پەڕەی دۆزینەوە ----------------
+
+              private fun pill(text: String): TextView {
+                  val t = Ui.tv(this, text, 13f, Ui.MUTED, true)
+                  t.setPadding(dp(14), dp(8), dp(14), dp(8))
+                  t.background = Ui.round(this, Ui.SURFACE2, 20)
+                  return t
+              }
+
+              private fun stylePill(t: TextView, selected: Boolean) {
+                  t.setTextColor(if (selected) Color.WHITE else Ui.MUTED)
+                  t.background = if (selected) Ui.grad(this, Ui.ACCENT, Ui.ACCENT2, 20) else Ui.round(this, Ui.SURFACE2, 20)
+              }
+
+              private fun styleModeChips() {
+                  for ((i, t) in modeChips.withIndex()) stylePill(t, i == mode)
+              }
+
+              private fun buildDiscover(): LinearLayout {
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+
+                  // سەردێڕ
+                  val header = LinearLayout(this)
+                  header.orientation = LinearLayout.HORIZONTAL
+                  header.gravity = Gravity.CENTER_VERTICAL
+                  header.setPadding(dp(16), dp(12), dp(16), dp(6))
+                  val logo = ImageView(this)
+                  logo.setImageResource(R.drawable.ic_launcher_foreground)
+                  header.addView(logo, LinearLayout.LayoutParams(dp(52), dp(52)))
+                  val titles = LinearLayout(this)
+                  titles.orientation = LinearLayout.VERTICAL
+                  titles.addView(Ui.tv(this, "دۆزینەوەی مانهوا", 20f, Ui.TEXT, true))
+                  titles.addView(Ui.tv(this, "AI ـی خۆت بۆ باشترین مانهواکان", 12f, Ui.MUTED))
                   val tlp = LinearLayout.LayoutParams(0, WRAP, 1f)
                   tlp.marginStart = dp(10)
                   header.addView(titles, tlp)
@@ -640,6 +1079,24 @@ jobs:
                   searchEt.isSingleLine = true
                   searchEt.imeOptions = EditorInfo.IME_ACTION_SEARCH
                   searchEt.setOnEditorActionListener { _, actionId, _ ->
+                      if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                          hideKeyboard()
+                          reload()
+                          true
+                      } else {
+                          false
+                      }
+                  }
+                  searchRow.addView(searchEt, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  val goBtn = Ui.button(this, "گەڕان", false) {
+                      hideKeyboard()
+                      reload()
+                  }
+                  val glp = LinearLayout.LayoutParams(WRAP, WRAP)
+                  glp.marginStart = dp(8)
+                  searchRow.addView(goBtn, glp)
+                  col.addView(searchRow, LinearLayout.LayoutParams(MATCH, WRAP))
+
                   // شێوازەکان
                   val modeScroll = HorizontalScrollView(this)
                   modeScroll.isHorizontalScrollBarEnabled = false
@@ -660,6 +1117,12 @@ jobs:
                       modeChips.add(chip)
                   }
                   modeScroll.addView(modeRow)
+                  col.addView(modeScroll, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  // ژانرەکان
+                  val genreScroll = HorizontalScrollView(this)
+                  genreScroll.isHorizontalScrollBarEnabled = false
+                  val genreRow = LinearLayout(this)
                   genreRow.orientation = LinearLayout.HORIZONTAL
                   genreRow.setPadding(dp(16), dp(6), dp(16), dp(6))
                   for (g in genreList) {
@@ -699,6 +1162,20 @@ jobs:
                   })
                   col.addView(discoverRv, LinearLayout.LayoutParams(MATCH, 0, 1f))
                   return col
+              }
+
+              private fun reload() {
+                  requestToken++
+                  loading = false
+                  page = 1
+                  hasMore = true
+                  customList = false
+                  discoverAdapter.items.clear()
+                  discoverAdapter.notifyDataSetChanged()
+                  loadPage()
+              }
+
+              private fun fetch(q: String, genres: List<String>, md: Int, pg: Int): List<Manhwa> {
                   if (q.isNotEmpty()) return Net.discover("SEARCH_MATCH", genres, q, "", pg, 24, 0, 0)
                   return when (md) {
                       0 -> {
@@ -718,6 +1195,36 @@ jobs:
                   val token = requestToken
                   val q = searchEt.text.toString().trim()
                   val genres = selectedGenres.toList()
+                  val curPage = page
+                  val curMode = mode
+                  if (curPage == 1) statusTv.text = "لە دۆزینەوەدایە..."
+                  Net.async(
+                      { fetch(q, genres, curMode, curPage) },
+                      { list ->
+                          if (token == requestToken) {
+                              loading = false
+                              applyResults(list, curPage, curMode, q)
+                          }
+                      },
+                      { err ->
+                          if (token == requestToken) {
+                              loading = false
+                              statusTv.text = "هەڵە: " + err
+                          }
+                      }
+                  )
+              }
+
+              private fun applyResults(list: List<Manhwa>, pg: Int, md: Int, q: String) {
+                  val hidden = Store.hiddenIds()
+                  val existing = HashSet<Int>()
+                  for (it in discoverAdapter.items) existing.add(it.id)
+                  val add = list.filter { !hidden.contains(it.id) && !existing.contains(it.id) }
+                  val start = discoverAdapter.items.size
+                  discoverAdapter.items.addAll(add)
+                  discoverAdapter.notifyItemRangeInserted(start, add.size)
+                  hasMore = list.size >= 10
+                  page = pg + 1
                   statusTv.text = when {
                       discoverAdapter.items.isEmpty() -> "هیچ ئەنجامێک نەدۆزرایەوە"
                       q.isEmpty() && md == 0 && !Store.hasTaste() -> "✦ چەند مانهوایەک پاشەکەوت بکە ♥ تا AI تامەکەت بناسێت"
@@ -777,6 +1284,51 @@ jobs:
                   Net.loadImage(m.cover, cover)
                   top.addView(cover, LinearLayout.LayoutParams(dp(120), dp(176)))
 
+                  val info = LinearLayout(this)
+                  info.orientation = LinearLayout.VERTICAL
+                  info.setPaddingRelative(dp(12), 0, 0, 0)
+                  info.addView(Ui.tv(this, m.title, 18f, Ui.TEXT, true))
+                  if (m.altTitle.isNotBlank()) info.addView(Ui.tv(this, m.altTitle, 12f, Ui.MUTED))
+                  val meta = ArrayList<String>()
+                  if (m.score > 0) meta.add("★ " + (m.score / 10.0))
+                  if (m.chapters > 0) meta.add(m.chapters.toString() + " ئەڵقە")
+                  val st = Ui.statusKu(m.status)
+                  if (st.isNotEmpty()) meta.add(st)
+                  if (m.year > 0) meta.add(m.year.toString())
+                  val metaTv = Ui.tv(this, meta.joinToString(" · "), 12f, Ui.ACCENT2, true)
+                  metaTv.setPadding(0, dp(8), 0, 0)
+                  info.addView(metaTv)
+                  val gTv = Ui.tv(this, m.genres.joinToString(" · "), 12f, Ui.MUTED)
+                  gTv.setPadding(0, dp(6), 0, 0)
+                  info.addView(gTv)
+                  top.addView(info, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(top, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  if (m.reason.isNotBlank()) {
+                      val r = Ui.tv(this, "✦ AI: " + m.reason, 13f, Ui.ACCENT2, true)
+                      r.setPadding(0, dp(12), 0, 0)
+                      col.addView(r)
+                  }
+
+                  val desc = Ui.tv(this, if (m.description.isBlank()) "—" else m.description, 14f, Ui.TEXT)
+                  desc.setPadding(0, dp(14), 0, 0)
+                  desc.setLineSpacing(0f, 1.15f)
+                  col.addView(desc)
+
+                  val ku = Ui.tv(this, "", 14f, Ui.ACCENT2)
+                  ku.visibility = View.GONE
+                  ku.setPadding(0, dp(10), 0, 0)
+                  ku.setLineSpacing(0f, 1.15f)
+                  col.addView(ku)
+
+                  val row1 = LinearLayout(this)
+                  row1.orientation = LinearLayout.HORIZONTAL
+                  row1.setPadding(0, dp(14), 0, 0)
+                  val saveBtn = Ui.button(this, if (Store.isSaved(m.id)) "♥ لابردن" else "♡ پاشەکەوت", true)
+                  saveBtn.setOnClickListener {
+                      val now = Store.toggleSave(m)
+                      saveBtn.text = if (now) "♥ لابردن" else "♡ پاشەکەوت"
+                      discoverAdapter.notifyDataSetChanged()
                       refreshSaved()
                   }
                   val trBtn = Ui.button(this, "وەرگێڕانی کورتە", false)
@@ -796,6 +1348,26 @@ jobs:
                   row1.addView(trBtn, LinearLayout.LayoutParams(0, WRAP, 1f))
                   col.addView(row1, LinearLayout.LayoutParams(MATCH, WRAP))
 
+                  val row2 = LinearLayout(this)
+                  row2.orientation = LinearLayout.HORIZONTAL
+                  row2.setPadding(0, dp(8), 0, 0)
+                  val simBtn = Ui.button(this, "✦ هاوشێوەکان", false)
+                  simBtn.setOnClickListener {
+                      dlg.dismiss()
+                      statusTv.text = "لە دۆزینەوەی هاوشێوەکان..."
+                      selectTab(0)
+                      Net.async(
+                          { Net.similar(m.id) },
+                          { list -> showCustom(list, "هاوشێوەی «" + m.title + "»") },
+                          { err -> statusTv.text = "هەڵە: " + err }
+                      )
+                  }
+                  val linkBtn = Ui.button(this, "AniList ↗", false)
+                  linkBtn.setOnClickListener {
+                      if (m.url.isNotBlank()) {
+                          try {
+                              startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(m.url)))
+                          } catch (_: Exception) { }
                       }
                   }
                   val lp2 = LinearLayout.LayoutParams(0, WRAP, 1f)
@@ -826,6 +1398,7 @@ jobs:
                   statusTv.text = "✦ AI وێنەکە دەپشکنێت..."
                   Net.async(
                       { Vision.identify(Vision.prepare(this, uri)) },
+                      { list ->
                           if (list.isEmpty()) {
                               statusTv.text = "AI نەیتوانی بیناسێتەوە، وێنەیەکی ڕوونتر تاقی بکەرەوە"
                           } else {
@@ -849,6 +1422,22 @@ jobs:
                   col.setPadding(dp(18), dp(18), dp(18), dp(18))
                   col.background = Ui.round(this, Ui.SURFACE, 22)
 
+                  col.addView(Ui.tv(this, "✦ AI بۆ دۆزینەوەی مانهوا", 18f, Ui.TEXT, true))
+                  val sub = Ui.tv(this, "بنووسە چی دەتەوێت بیخوێنیتەوە (بە کوردی، عەرەبی یان ئینگلیزی). AI تامی پاشەکەوتکراوەکانیشت لەبەرچاو دەگرێت.", 12f, Ui.MUTED)
+                  sub.setPadding(0, dp(6), 0, dp(10))
+                  col.addView(sub)
+
+                  val et = Ui.edit(this, "نموونە: فانتازیا و ئاکشن، کارەکتەری سەرەکی زۆر بەهێز و چیرۆکی تۆڵەکردنەوە")
+                  et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                  et.minLines = 3
+                  et.gravity = Gravity.TOP
+                  col.addView(et, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val sugRow = HorizontalScrollView(this)
+                  sugRow.isHorizontalScrollBarEnabled = false
+                  val sugs = LinearLayout(this)
+                  sugs.orientation = LinearLayout.HORIZONTAL
+                  sugs.setPadding(0, dp(8), 0, dp(8))
                   val ideas = listOf("تۆڵەکردنەوە و ئاکشن", "ڕۆمانسی ئارام", "سیستەم و پێشکەوتن (leveling)", "نهێنی و ترس", "کۆمیدی و ژیانی ڕۆژانە")
                   for (idea in ideas) {
                       val chip = pill(idea)
@@ -867,6 +1456,11 @@ jobs:
                       val text = et.text.toString().trim()
                       if (text.isEmpty()) {
                           toast("تکایە شتێک بنووسە")
+                      } else {
+                          dlg.dismiss()
+                          if (Store.apiKey.isBlank()) showKeyDialog { runAi(text) } else runAi(text)
+                      }
+                  }
                   val keyBtn = Ui.button(this, "کلیلی AI", false) {
                       dlg.dismiss()
                       showKeyDialog(null)
@@ -923,6 +1517,38 @@ jobs:
                   }
                   val slp = LinearLayout.LayoutParams(0, WRAP, 1f)
                   slp.marginEnd = dp(8)
+                  row.addView(save, slp)
+                  row.addView(get, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  dlg.setView(col)
+                  dlg.show()
+                  dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                  dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.94).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+              }
+
+              private fun runAi(text: String) {
+                  selectTab(0)
+                  statusTv.text = "✦ AI بیر دەکاتەوە..."
+                  Net.async(
+                      { Net.recommend(text) },
+                      { list ->
+                          if (list.isEmpty()) {
+                              statusTv.text = "AI هیچ ئەنجامێکی نەدۆزییەوە، دووبارە هەوڵ بدە"
+                          } else {
+                              showCustom(list, "✦ پێشنیاری AI بۆ: «" + text + "»")
+                          }
+                      },
+                      { err -> statusTv.text = "AI هەڵەی دا: " + err.take(140) }
+                  )
+              }
+
+              // ---------------- وەرگێڕانی ڕاستەوخۆ ----------------
+
+              private fun buildTranslate(): ScrollView {
+                  val sv = ScrollView(this)
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
                   col.gravity = Gravity.CENTER_HORIZONTAL
                   col.setPadding(dp(20), dp(24), dp(20), dp(24))
 
@@ -939,6 +1565,39 @@ jobs:
                   startBtn.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
                   startBtn.setPadding(dp(20), dp(18), dp(20), dp(18))
                   startBtn.setOnClickListener { toggleTranslator() }
+                  col.addView(startBtn, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  translateStatus = Ui.tv(this, "", 13f, Ui.MUTED)
+                  translateStatus.gravity = Gravity.CENTER
+                  translateStatus.setPadding(0, dp(10), 0, dp(16))
+                  col.addView(translateStatus, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val card = LinearLayout(this)
+                  card.orientation = LinearLayout.VERTICAL
+                  card.background = Ui.round(this, Ui.SURFACE, 18)
+                  card.setPadding(dp(16), dp(14), dp(16), dp(14))
+                  card.addView(Ui.tv(this, "چۆن کار دەکات؟", 15f, Ui.TEXT, true))
+                  val steps = listOf(
+                      "١. دوگمەی سەرەوە بدە و مۆڵەتەکان (Display over other apps و تۆمارکردنی شاشە) ڕێپێبدە.",
+                      "٢. بڕۆ بۆ ئەو ئەپ یان سایتەی مانهوا دەخوێنیتەوە.",
+                      "٣. سکڕۆڵ بکە. کاتێک وەستایت، دەقی ئینگلیزی بە کوردی دەگۆڕدرێت.",
+                      "٤. بۆ وەستاندن، بگەڕێوە ئێرە و دوگمەکە بدە.",
+                      "تێبینی: ئینتەرنێت پێویستە بۆ وەرگێڕان."
+                  )
+                  for (s in steps) {
+                      val t = Ui.tv(this, s, 13f, Ui.MUTED)
+                      t.setPadding(0, dp(8), 0, 0)
+                      card.addView(t)
+                  }
+                  col.addView(card, LinearLayout.LayoutParams(MATCH, WRAP))
+                  sv.addView(col)
+                  return sv
+              }
+
+              private fun refreshTranslateUi() {
+                  if (!::startBtn.isInitialized) return
+                  val on = KurdishRealTimeTranslatorService.running
+                  startBtn.text = if (on) "■ وەستاندنی وەرگێڕان" else "▶ دەستپێکردنی وەرگێڕانی ڕاستەوخۆ"
                   startBtn.background = if (on) Ui.round(this, Ui.HEART, 14) else Ui.grad(this, Ui.ACCENT, Ui.ACCENT2, 14)
                   translateStatus.text = if (on) "چالاکە — بڕۆ بۆ مانهواکەت" else "ئامادەیە"
               }
@@ -987,6 +1646,18 @@ jobs:
                   if (!::savedAdapter.isInitialized) return
                   savedAdapter.items.clear()
                   savedAdapter.items.addAll(Store.saved())
+                  savedAdapter.notifyDataSetChanged()
+                  savedEmpty.visibility = if (savedAdapter.items.isEmpty()) View.VISIBLE else View.GONE
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/KurdishRealTimeTranslatorService.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/KurdishRealTimeTranslatorService.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.app.Activity
+          import android.app.Notification
+          import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.Service
           import android.content.Context
@@ -1011,6 +1682,10 @@ jobs:
           import android.os.SystemClock
           import android.util.DisplayMetrics
           import android.util.Log
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.WindowManager
           import android.widget.FrameLayout
           import android.widget.TextView
           import com.google.mlkit.vision.common.InputImage
@@ -1030,6 +1705,89 @@ jobs:
 
               private class Block(val text: String, val rect: Rect, val bg: Int)
 
+              private val handler = Handler(Looper.getMainLooper())
+              private val checkInterval = 80L
+              private val stableMs = 160L // ئەگەر ١٦٠ms وێنەی نوێ نەهات = سکڕۆڵ وەستاوە
+              private val captureWidth = 720f // وێنەگرتن بە قەبارەی بچووکتر بۆ خێرایی
+
+              // ناوچەی سەرەوە (ستاتۆس بار + ئەدرێس بار) و خوارەوە کە وەرناگێڕدرێت
+              private val topIgnore = 0.12f
+              private val bottomIgnore = 0.03f
+
+              // ئەگەر زیاتر لەم ڕێژەیە لە وێنەکە گۆڕا، واتە سکڕۆڵ دەکرێت
+              private val changeThreshold = 0.006f
+
+              private var screenW = 0
+              private var screenH = 0
+              private var capW = 0
+              private var capH = 0
+              private var scale = 1f
+              private var lastFrameTime = 0L
+              private var mediaProjection: MediaProjection? = null
+              private var virtualDisplay: VirtualDisplay? = null
+              private var imageReader: ImageReader? = null
+              private var windowManager: WindowManager? = null
+              // چەند چینێکی ئۆڤەرلەی سەرەوەی یەک: ئەگەر سیستەم شەفافییان بکات، یەکتر دەپۆشن و ئینگلیزییەکە نامێنێت
+              private val containers = ArrayList<FrameLayout>()
+
+              private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+              private val orchestrator = Executors.newSingleThreadExecutor()
+              private val workers = Executors.newFixedThreadPool(4)
+              private val cache = ConcurrentHashMap<String, String>()
+
+              private var lastBitmap: Bitmap? = null
+              private var prevSig: IntArray? = null
+              private var overlayVisible = false
+              private var needsTranslate = true
+              private var needFreshFrame = false
+              private var suppressUntil = 0L
+              private var isProcessing = false
+              private var generation = 0
+              private var started = false
+
+              private val runnableCode = object : Runnable {
+                  override fun run() {
+                      if (!started) return
+                      try {
+                          captureAndProcess()
+                      } catch (e: Exception) {
+                          Log.e(TAG, "هەڵە: ${e.message}")
+                      }
+                      handler.postDelayed(this, checkInterval)
+                  }
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (started) return START_NOT_STICKY
+
+                  createNotificationChannel()
+                  val notification = Notification.Builder(this, CHANNEL_ID)
+                      .setContentTitle("Kurdish Manhwa Real")
+                      .setContentText("چاودێری شاشە دەکرێت بۆ وەرگێڕانی خێرا...")
+                      .setSmallIcon(android.R.drawable.ic_menu_view)
+                      .build()
+
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                  } else {
+                      startForeground(1, notification)
+                  }
+
+                  val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
+                  val dataIntent: Intent? = if (Build.VERSION.SDK_INT >= 33) {
+                      intent?.getParcelableExtra("DATA_INTENT", Intent::class.java)
+                  } else {
+                      @Suppress("DEPRECATION")
+                      intent?.getParcelableExtra("DATA_INTENT")
+                  }
+
+                  if (dataIntent == null || resultCode != Activity.RESULT_OK) {
+                      stopSelf()
+                      return START_NOT_STICKY
+                  }
+
+                  try {
+                      val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                       mediaProjection = mpManager.getMediaProjection(resultCode, dataIntent)
                       mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                           override fun onStop() {
@@ -1065,6 +1823,17 @@ jobs:
                       screenW = m.widthPixels
                       screenH = m.heightPixels
                   }
+                  scale = if (screenW > captureWidth) captureWidth / screenW else 1f
+                  capW = (screenW * scale).toInt()
+                  capH = (screenH * scale).toInt()
+                  imageReader = ImageReader.newInstance(capW, capH, PixelFormat.RGBA_8888, 2)
+                  virtualDisplay = mediaProjection?.createVirtualDisplay(
+                      "ScreenCapture", capW, capH, dpi,
+                      DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                      imageReader?.surface, null, null
+                  )
+              }
+
               private fun setupOverlayWindow() {
                   val wm = getSystemService(WINDOW_SERVICE) as WindowManager
                   windowManager = wm
@@ -1104,6 +1873,14 @@ jobs:
 
               private fun toBitmap(image: Image): Bitmap? {
                   return try {
+                      val plane = image.planes[0]
+                      val pixelStride = plane.pixelStride
+                      val rowPadding = plane.rowStride - pixelStride * image.width
+                      val full = Bitmap.createBitmap(
+                          image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888
+                      )
+                      full.copyPixelsFromBuffer(plane.buffer)
+                      if (rowPadding == 0) {
                           full
                       } else {
                           val cropped = Bitmap.createBitmap(full, 0, 0, image.width, image.height)
@@ -1144,6 +1921,17 @@ jobs:
                   var newFrame = false
                   if (image != null) {
                       val fresh = toBitmap(image)
+                      if (fresh != null) {
+                          lastBitmap?.recycle()
+                          lastBitmap = fresh
+                          newFrame = true
+                      }
+                  }
+                  // ئەگەر شاشە نەگۆڕابێت وێنەی نوێ نایەت، بۆیە دوایین وێنە بەکاردێنین
+                  val bmp = lastBitmap ?: return
+
+                  if (newFrame) {
+                      lastFrameTime = SystemClock.uptimeMillis()
                       val sig = signature(bmp)
                       val prev = prevSig
                       prevSig = sig
@@ -1186,6 +1974,16 @@ jobs:
                       (r.left - m) to (r.top - m), cx to (r.top - m), (r.right + m) to (r.top - m),
                       (r.left - m) to cy, (r.right + m) to cy,
                       (r.left - m) to (r.bottom + m), cx to (r.bottom + m), (r.right + m) to (r.bottom + m)
+                  )
+                  val cols = ArrayList<Int>()
+                  for ((x, y) in pts) {
+                      if (x in 0 until bmp.width && y in 0 until bmp.height) cols.add(bmp.getPixel(x, y))
+                  }
+                  if (cols.isEmpty()) return Color.WHITE
+                  cols.sortBy { lum(it) }
+                  return cols[cols.size / 2] or (0xFF shl 24)
+              }
+
               private fun runOcr(bmp: Bitmap, gen: Int) {
                   isProcessing = true
                   val h = bmp.height
@@ -1202,6 +2000,90 @@ jobs:
                                   (box.left / scale).toInt(), (box.top / scale).toInt(),
                                   (box.right / scale).toInt(), (box.bottom / scale).toInt()
                               )
+                              blocks.add(Block(t, screenRect, sampleBg(bmp, box)))
+                              if (blocks.size >= 12) break
+                          }
+                          if (blocks.isNotEmpty()) translateBlocks(blocks, gen)
+                      }
+                      .addOnFailureListener { e -> Log.e(TAG, "OCR هەڵە: ${e.message}") }
+                      .addOnCompleteListener {
+                          isProcessing = false
+                          bmp.recycle()
+                      }
+              }
+
+              // ---------- وەرگێڕان ----------
+
+              private fun translate(text: String): String? {
+                  cache[text]?.let { return it }
+                  return try {
+                      val urlString = "https://translate.googleapis.com/translate_a/single" +
+                          "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text.take(500), "UTF-8")
+                      val conn = URL(urlString).openConnection() as HttpURLConnection
+                      conn.requestMethod = "GET"
+                      conn.connectTimeout = 4000
+                      conn.readTimeout = 4000
+                      conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                      val response = conn.inputStream.bufferedReader().use { it.readText() }
+                      val sub = JSONArray(response).getJSONArray(0)
+                      val sb = StringBuilder()
+                      for (i in 0 until sub.length()) {
+                          sb.append(sub.getJSONArray(i).optString(0, ""))
+                      }
+                      val out = sb.toString().trim()
+                      if (out.isNotEmpty()) cache[text] = out
+                      if (out.isEmpty()) null else out
+                  } catch (e: Exception) {
+                      Log.e(TAG, "هەڵە لە وەرگێڕان: ${e.message}")
+                      null
+                  }
+              }
+
+              private fun translateBlocks(blocks: List<Block>, gen: Int) {
+                  if (orchestrator.isShutdown) return
+                  orchestrator.execute {
+                      try {
+                          // هەموو بلۆکەکان پێکەوە (پاڕەلێل) وەردەگێڕدرێن بۆ خێرایی
+                          val futures = blocks.map { b -> workers.submit(Callable<String?> { translate(b.text) }) }
+                          val results = futures.map { f ->
+                              try { f.get(6, TimeUnit.SECONDS) } catch (e: Exception) { null }
+                          }
+                          handler.post {
+                              if (started && gen == generation && !overlayVisible) showBlocks(blocks, results)
+                          }
+                      } catch (e: Exception) {
+                          Log.e(TAG, "هەڵە: ${e.message}")
+                      }
+                  }
+              }
+
+              // ---------- نیشاندان لەجێی ئینگلیزییەکە ----------
+
+              private fun showBlocks(blocks: List<Block>, results: List<String?>) {
+                  if (containers.isEmpty()) return
+                  val loc = IntArray(2)
+                  containers[0].getLocationOnScreen(loc)
+                  var shown = 0
+
+                  for (c in containers) c.removeAllViews()
+
+                  for (i in blocks.indices) {
+                      val tr = results[i] ?: continue
+                      val b = blocks[i]
+                      val padX = (b.rect.width() * 0.10f).toInt() + 8
+                      val padY = (b.rect.height() * 0.08f).toInt() + 6
+                      val left = (b.rect.left - padX).coerceAtLeast(0)
+                      val top = (b.rect.top - padY).coerceAtLeast(0)
+                      val right = (b.rect.right + padX).coerceAtMost(screenW)
+                      val bottom = (b.rect.bottom + padY).coerceAtMost(screenH)
+                      if (right <= left || bottom <= top) continue
+
+                      for ((layer, c) in containers.withIndex()) {
+                          val tv = TextView(this)
+                          tv.setAutoSizeTextTypeUniformWithConfiguration(6, 30, 1, TypedValue.COMPLEX_UNIT_SP)
+                          // تەنها چینی سەرەوە دەقی تێدایە؛ چینەکانی خوارەوە تەنها بۆ داپۆشین
+                          tv.text = if (layer == containers.size - 1) tr else ""
+                          tv.setTextColor(if (lum(b.bg) > 150) Color.BLACK else Color.WHITE)
                           tv.typeface = Typeface.DEFAULT_BOLD
                           tv.gravity = Gravity.CENTER
                           tv.textDirection = View.TEXT_DIRECTION_RTL
@@ -1223,6 +2105,91 @@ jobs:
 
                   if (shown > 0) {
                       overlayVisible = true
+                      // گۆڕانی وێنەکە بەهۆی نیشاندانی خۆمانەوە وەک سکڕۆڵ لەبەرچاو نەگیرێت
+                      suppressUntil = SystemClock.uptimeMillis() + 600
+                  }
+              }
+
+              private fun hideOverlay() {
+                  for (c in containers) c.removeAllViews()
+                  overlayVisible = false
+              }
+
+              private fun createNotificationChannel() {
+                  val channel = NotificationChannel(CHANNEL_ID, "Kurdish Manhwa Service", NotificationManager.IMPORTANCE_LOW)
+                  getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  started = false
+                  running = false
+                  handler.removeCallbacksAndMessages(null)
+                  orchestrator.shutdownNow()
+                  workers.shutdownNow()
+                  try { recognizer.close() } catch (_: Exception) {}
+                  virtualDisplay?.release()
+                  imageReader?.close()
+                  mediaProjection?.stop()
+                  lastBitmap?.recycle()
+                  lastBitmap = null
+                  for (c in containers) {
+                      try { windowManager?.removeView(c) } catch (_: Exception) {}
+                  }
+                  containers.clear()
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              companion object {
+                  private const val TAG = "KurdishManhwa"
+                  private const val CHANNEL_ID = "KurdishManhwaChannel"
+                  @Volatile var running = false
+                  private const val OVERLAY_LAYERS = 3
+                  private const val SIG_W = 48
+                  private const val SIG_H = 96
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Web.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/Web.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.annotation.SuppressLint
+          import android.app.Activity
+          import android.content.Context
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.graphics.Canvas
+          import android.graphics.Color
+          import android.graphics.Rect
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.net.Uri
+          import android.os.Handler
+          import android.os.Looper
+          import android.util.Base64
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.MotionEvent
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.inputmethod.EditorInfo
+          import android.view.inputmethod.InputMethodManager
+          import android.text.InputType
+          import android.webkit.CookieManager
+          import android.webkit.WebChromeClient
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebSettings
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.EditText
+          import android.widget.FrameLayout
+          import android.widget.HorizontalScrollView
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import com.google.mlkit.vision.common.InputImage
+          import com.google.mlkit.vision.text.TextRecognition
           import com.google.mlkit.vision.text.latin.TextRecognizerOptions
           import org.json.JSONArray
           import org.json.JSONObject
@@ -1244,6 +2211,39 @@ jobs:
               private val cache = ConcurrentHashMap<String, String>()
 
               fun translate(text: String): String? {
+                  cache[text]?.let { return it }
+                  return try {
+                      val url = "https://translate.googleapis.com/translate_a/single" +
+                          "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text.take(500), "UTF-8")
+                      val conn = URL(url).openConnection() as HttpURLConnection
+                      conn.connectTimeout = 4000
+                      conn.readTimeout = 5000
+                      conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                      val response = try {
+                          conn.inputStream.bufferedReader().use { it.readText() }
+                      } finally {
+                          conn.disconnect()
+                      }
+                      val sub = JSONArray(response).getJSONArray(0)
+                      val sb = StringBuilder()
+                      for (i in 0 until sub.length()) sb.append(sub.getJSONArray(i).optString(0, ""))
+                      val out = sb.toString().trim()
+                      if (out.isEmpty()) {
+                          null
+                      } else {
+                          cache[text] = out
+                          out
+                      }
+                  } catch (e: Exception) {
+                      null
+                  }
+              }
+          }
+
+          /** گەڕان بە وێنە: Gemini وێنەکە دەبینێت و ناوی مانهواکە دەدۆزێتەوە، پاشان لە AniList دەیدۆزینەوە */
+          object Vision {
+              fun prepare(ctx: Context, uri: Uri): ByteArray {
+                  val bounds = BitmapFactory.Options()
                   bounds.inJustDecodeBounds = true
                   ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
                   var sample = 1
@@ -1269,6 +2269,13 @@ jobs:
                       .put(
                           JSONObject().put(
                               "inline_data",
+                              JSONObject()
+                                  .put("mime_type", "image/jpeg")
+                                  .put("data", Base64.encodeToString(jpeg, Base64.NO_WRAP))
+                          )
+                      )
+                  val body = JSONObject()
+                      .put("contents", JSONArray().put(JSONObject().put("parts", parts)))
                       .put("generationConfig", JSONObject().put("temperature", 0.3).put("responseMimeType", "application/json"))
 
                   val resp = Net.httpPost(
@@ -1288,6 +2295,10 @@ jobs:
                       val o = arr.optJSONObject(i) ?: continue
                       val t = o.s("title")
                       if (t.isNotBlank()) wanted.add(Pair(t, o.s("reason")))
+                  }
+                  val futures = wanted.map { w ->
+                      Net.io.submit(Callable<Manhwa?> {
+                          try { Net.findByTitle(w.first) } catch (ex: Exception) { null }
                       })
                   }
                   val out = ArrayList<Manhwa>()
@@ -1371,6 +2382,53 @@ jobs:
 
                   val go = Ui.button(act, "→", true) { open(urlEt.text.toString()) }
                   top.addView(go, LinearLayout.LayoutParams(WW, WW))
+                  root.addView(top, LinearLayout.LayoutParams(WM, WW))
+
+                  // ڕیزی کردارەکان
+                  val scroll = HorizontalScrollView(act)
+                  scroll.isHorizontalScrollBarEnabled = false
+                  val row = LinearLayout(act)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  row.layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  row.setPadding(dp(10), dp(2), dp(10), dp(6))
+
+                  trBtn = Ui.button(act, "", false) { toggle() }
+                  val tlp = LinearLayout.LayoutParams(WW, WW)
+                  tlp.marginEnd = dp(8)
+                  row.addView(trBtn, tlp)
+
+                  val reload = Ui.button(act, "⟳", false) { web.reload() }
+                  val rlp = LinearLayout.LayoutParams(WW, WW)
+                  rlp.marginEnd = dp(8)
+                  row.addView(reload, rlp)
+
+                  val sites = listOf("Google" to "https://www.google.com", "Webtoon" to "https://www.webtoons.com", "AniList" to "https://anilist.co")
+                  for (s in sites) {
+                      val chip = Ui.button(act, s.first, false) { open(s.second) }
+                      val clp = LinearLayout.LayoutParams(WW, WW)
+                      clp.marginEnd = dp(8)
+                      row.addView(chip, clp)
+                  }
+                  scroll.addView(row)
+                  root.addView(scroll, LinearLayout.LayoutParams(WM, WW))
+
+                  bar.setBackgroundColor(Ui.ACCENT2)
+                  bar.visibility = View.GONE
+                  root.addView(bar, LinearLayout.LayoutParams(0, dp(3)))
+
+                  val frame = FrameLayout(act)
+                  frame.addView(web, FrameLayout.LayoutParams(WM, WM))
+                  overlay.isClickable = false
+                  overlay.isFocusable = false
+                  frame.addView(overlay, FrameLayout.LayoutParams(WM, WM))
+                  root.addView(frame, LinearLayout.LayoutParams(WM, 0, 1f))
+
+                  styleTr()
+              }
+
+              @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
+              private fun setup() {
+                  val st = web.settings
                   st.javaScriptEnabled = true
                   st.domStorageEnabled = true
                   st.loadWithOverviewMode = true
@@ -1447,6 +2505,59 @@ jobs:
                   if (!loaded) {
                       loaded = true
                       open("https://www.google.com")
+                  }
+                  if (translating) schedule(200, true)
+              }
+
+              fun back(): Boolean {
+                  if (web.canGoBack()) {
+                      web.goBack()
+                      return true
+                  }
+                  return false
+              }
+
+              fun destroy() {
+                  handler.removeCallbacksAndMessages(null)
+                  try {
+                      web.stopLoading()
+                      (web.parent as? ViewGroup)?.removeView(web)
+                      web.destroy()
+                  } catch (_: Exception) { }
+                  try { recognizer.close() } catch (_: Exception) { }
+              }
+
+              // ---------------- وەرگێڕان ----------------
+
+              private fun styleTr() {
+                  trBtn.text = if (translating) "◉ وەرگێڕان: چالاکە" else "○ وەرگێڕان: کوژاوەتەوە"
+                  trBtn.setTextColor(if (translating) Color.WHITE else Ui.TEXT)
+                  trBtn.background = if (translating) Ui.grad(act, Ui.ACCENT, Ui.ACCENT2, 14) else Ui.round(act, Ui.SURFACE2, 14)
+              }
+
+              private fun toggle() {
+                  translating = !translating
+                  styleTr()
+                  if (translating) {
+                      schedule(100, true)
+                  } else {
+                      handler.removeCallbacks(ocrRunnable)
+                      clearOverlay()
+                  }
+              }
+
+              private fun schedule(delay: Long, again: Boolean = false) {
+                  handler.removeCallbacks(ocrRunnable)
+                  handler.postDelayed(ocrRunnable, delay)
+                  // دووبارە پشکنین بۆ ئەو وێنانەی دواتر بار دەبن
+                  if (again) handler.postDelayed(ocrRunnable, delay + 1400)
+              }
+
+              private fun clearOverlay() {
+                  overlay.removeAllViews()
+                  lastKey = ""
+              }
+
               private fun reposition(x: Int, y: Int) {
                   val dx = (baseX - x).toFloat()
                   val dy = (baseY - y).toFloat()
@@ -1469,6 +2580,17 @@ jobs:
                       (r.left - m) to (r.bottom + m), cx to (r.bottom + m), (r.right + m) to (r.bottom + m)
                   )
                   val cols = ArrayList<Int>()
+                  for ((x, y) in pts) {
+                      if (x in 0 until bmp.width && y in 0 until bmp.height) cols.add(bmp.getPixel(x, y))
+                  }
+                  if (cols.isEmpty()) return Color.WHITE
+                  cols.sortBy { lum(it) }
+                  return cols[cols.size / 2] or (0xFF shl 24)
+              }
+
+              private fun runOcr() {
+                  if (!translating) return
+                  if (root.visibility != View.VISIBLE) return
                   if (busy) {
                       schedule(300)
                       return
@@ -1498,6 +2620,38 @@ jobs:
                   val sy = web.scrollY
                   busy = true
 
+                  recognizer.process(InputImage.fromBitmap(bmp, 0))
+                      .addOnSuccessListener { vt ->
+                          if (gen != navGen || !translating) {
+                              busy = false
+                              return@addOnSuccessListener
+                          }
+                          val blocks = ArrayList<Block>()
+                          for (b in vt.textBlocks) {
+                              val box = b.boundingBox ?: continue
+                              val t = b.text.replace("\n", " ").trim()
+                              if (t.count { it.isLetter() } < 2) continue
+                              val r = Rect(
+                                  (box.left / scale).toInt(), (box.top / scale).toInt(),
+                                  (box.right / scale).toInt(), (box.bottom / scale).toInt()
+                              )
+                              blocks.add(Block(t, r, sampleBg(bmp, box)))
+                              if (blocks.size >= 14) break
+                          }
+                          if (blocks.isEmpty()) {
+                              busy = false
+                              clearOverlay()
+                              return@addOnSuccessListener
+                          }
+                          Thread {
+                              try {
+                                  val futures = blocks.map { b -> Net.io.submit(Callable<String?> { Tr.translate(b.text) }) }
+                                  val results = futures.map { f ->
+                                      try { f.get(6, TimeUnit.SECONDS) } catch (e: Exception) { null }
+                                  }
+                                  handler.post { applyBlocks(blocks, results, sx, sy, gen) }
+                              } catch (e: Exception) {
+                                  handler.post { busy = false }
                               }
                           }.start()
                       }
@@ -1515,6 +2669,12 @@ jobs:
                       if (results[i] == null) continue
                       val r = blocks[i].rect
                       sb.append(blocks[i].text.take(24)).append('|').append(r.left / 24).append(',').append((r.top + sy) / 24).append(';')
+                  }
+                  val key = sb.toString()
+                  if (key.isEmpty()) return
+                  if (key == lastKey && overlay.childCount > 0) {
+                      reposition(web.scrollX, web.scrollY)
+                      return
                   }
                   lastKey = key
 
@@ -1538,6 +2698,31 @@ jobs:
                       val tv = TextView(act)
                       tv.setAutoSizeTextTypeUniformWithConfiguration(6, 30, 1, TypedValue.COMPLEX_UNIT_SP)
                       tv.text = tr
+                      tv.setTextColor(if (lum(b.bg) > 150) Color.BLACK else Color.WHITE)
+                      tv.typeface = Typeface.DEFAULT_BOLD
+                      tv.gravity = Gravity.CENTER
+                      tv.textDirection = View.TEXT_DIRECTION_RTL
+                      tv.includeFontPadding = false
+                      tv.setPadding(4, 2, 4, 2)
+                      val shape = GradientDrawable()
+                      shape.setColor(b.bg)
+                      shape.cornerRadius = 14f
+                      tv.background = shape
+
+                      val lp = FrameLayout.LayoutParams(right - left, bottom - top)
+                      lp.leftMargin = left
+                      lp.topMargin = top
+                      overlay.addView(tv, lp)
+                  }
+                  reposition(web.scrollX, web.scrollY)
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp)
+          base64 -d > app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp <<'KMEOF'
+          UklGRlI1AABXRUJQVlA4WAoAAAAQAAAAHwEAHwEAQUxQSJoEAAABt8KobSRJm1R17/Va/nwXQ0TkAQgoCJhiAY2uy82+DqSTaybp
+          BIn2HpR+q/Qy/ihDcds2jrX/3OlXfxExAXqMlGGX1BPO2SmpMfVYOx9QLXrrXCXYtptG0jQzMzN3DzMzoxNr/2uZooHSTw+WvhTR
+          fwhuJCmSnFPTsw2zx7D0ALNp2/z/e9oKOiYi1LhtG6EZ+4DLsZX1wrknHf91/NfxX4cEXQMTy9t799zfSiZJY7j73vbyxEBX5esZ
           3zi7/fKTfHPi5W3fsJ6q1r9w+PCD1CWXhUdEM23dw1iXDw8PF/or91t56vBhqvsEpMKzffvOzD3VfbrSw8Oprur8Zl64+FpIFqnM
           8kNikVxIvr640FOFpo7fClk2HfthQyHk2+OpitO39UhI98yfEnMn+Wirr7pMXPz0dX1jz8/qCPLTxYlqsnizNr/kT084yZuLFXT0
           oPZVZ2yLmBv5oGIOZq3V/IztNlsdxq80HrXbwRWriD+zDoRlsA0TQR70VIDVF5ILtmnc+GIVvaGrwiRtnCR0g24r1b642jrmTFu4
@@ -1548,6 +2733,19 @@ jobs:
           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
+          m0cX4aOr8dFl+ej6fHShPLpiH126T1+DT18MT1+VT1+eT1+nT18wT1+5jy+Bj68Fjy+Kj68Ojy+Tj6+Xjy8cj6+gjy8lj6+pjy8u
+          j6+yjy83j6+7Ty4AT66ETy4JT66NTy4ST64WTy6bT64fTy4kT66oTy4tT64xTy42T666Ty4/D9cBDxcED1cGD5cID9cKDxcND1cP
+          D5cRD9cTDxcWD1cYD5caD9ccDxefDlchD5cjD9elDhcoD1eqDpcsD9euDhexDlezDpe1Dte3Dhe6Dlc8Dpe+zlwDOHMx2MxVYTOX
+          h81cJ+eedPzX8V/Hf50REFZQOCCSMAAAkIoAnQEqIAEgAT5tMJRHJCKiISk+yMiADYlmbuF0jgASFeoL6y+gxWn9N/ZP8Z6wOXPr
+          /yY+ovON/qfUv+n/YM/XXzyvVZ+5XqQ/cr9xvef/7Xqn/vXqM/2b/Semt7EH7wew7+4fp0ex//cP+z+5HwE/sd///YA/+3tk/wD/
+          /8Rx/ce37vT/GPlf8X/ef3P/w/tg40+rvUs+Xfcv93/gfPX/mf5DxL+L3+N6hH5F/Qf8z6JH1P/O7dDa/9Z6B3sH9e/4f+F/yPlv
+          /43oR9lf+l/fPgA/nf9e/5f9t9wf+F4Bv5H/fftd8AP9C/qv/p/zv+R+Ff+f/9H+Z83f6B/lv/L/sfgI/mn9p/7H989ub//+4b91
+          f//7vH7S//8pNeaCP4yDavNq80EfxkG1ebV5oI/jINq82rzQR/GP7+kEvXYToKJQ0mMEvqE1cKA39SeWrLoWA7NHmJCyd4NXmgj+
+          IYQPU90AD7P7mf9bq/vp6Q/1b0JBp8w+BamcyOEGlAkZPSrLYKqKQ5x6hTHb8QMUsZBl9X3glC7DsQRr9/YYNoeZg3HjNaVoC9l7
+          /B7daKnSy9rKobjviB5XJIVvb7VsNj0BJ71oYZwlkG7vwt1l8iKNv8n6TzaednqFKB9sGpSr5MPeT/KMSRgJjM+e0D9y50+1m6Lw
+          +NbL+dc6zFSCjOHjqbtvLGgbcbwGyGmI2QF6S6f7RblDwAPGKl/1hWP705ZcJZ2Zv9Mbd3bJmgAnvyfR20Aju4BI3Gkg9NOIG/aI
+          miUtvzTtgP7Fgnqxwl51jGdLt6JnU2k/RBZM3mnZwZLKlX6SgYvBWGdTm/IgbmbVjNsrLrGpyLNfhfdUEkbNP+Sb6IJkbbv+TaS7
+          tT5t0x6+N9X/NI1Py0QHWmrK8+YZ0c7odmkR5H3KISDIYW4u8p9e9HJFxUh93w1C8FWIZKW0k/4g2dyFZdZNNDQVFPQjX/rB8Tn8
           egp+DGfbikR2Ezp2xOKokM72i5Hz2+l5p9ffV+x8ibE50DgDKQ6uH2hercg8t5HBRvdhhxxEm39UN4J1Jr0yWjWU4jbYKJzsZwT3
           McWA04NGQb9hiYLaKYZA7jpHPWz5l0EXMWtr0/cVGVzKet6sSSfGApyv/JStpEJJG7XPkfuLIdXTXvwkRzQKOZqZS/UpIBg8QbQ1
           SJiz5f4vDgVmApbgB5t/9cQQowtkC/Iwhwz2jMmQNd3xbBtH4QDMw92NC+LjbmdOFLwAwryGxhl08ql81KayDawMLmcMEwJdQyfU
@@ -1558,6 +2756,22 @@ jobs:
           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
+          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
@@ -1578,6 +2792,28 @@ jobs:
           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
+          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
@@ -1596,6 +2832,25 @@ jobs:
           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
+          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
@@ -1605,6 +2860,25 @@ jobs:
           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
+          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
@@ -1614,6 +2888,13 @@ jobs:
           qPrnqqejRQ2kHvfsWuHkonI8rqPuMfeJ9YAGAudt+kuNQth+4EyoxtvcyY9W3dZuqzkL1u5F0mP97Qh6cKDXLUxikCttDcpmcn2G
           uaJyxoxG/tjuK5444o8QL75jPrIQ5/KH7m5AnUc9bNBIvms7gDm9FDhAabEXFjtf3Q5e3t1mw8/wKXxa6ifxEsa27Gbp5IDYQK41
           80LFzZDjRXRp2nH9/7HiOm9k9+KahzgITVxVS3kGlM9QnG+Tyl2pRNtj9eq0jx205aPWQAVVfQtdc0znlGR2FNsSy3OKxGCT2d9z
+          ++kh77BPFFqTlfQE0+ZHbV6k4C5ty2XSs6BWWyh9ZjKaW22lLxtnc/PGWIsSynfXHntLE2Uxrz7ntPS18Kl3s51VOVgljfEdgz5S
+          +ss/bxUFfSlN31Y2HeDQWSxqExo8jx+Nq7ukgFEoM90DnZ4C7o02Q31svfCV3/tLLddDE0wIg4E0B2vGHHmMnxNlardpNIiYe34H
+          baJCBFivFQujsCY60jT8ID4+95cgDIthdE373mKztuBL0eLGJ3s8tsgM5x31K7bXupHhI9gqQ/zpH4l6aAFiQ+YtiOz8ZStF/vC2
+          oeIgTeIUJkpEleX6LHbGAsO2HJnZg3coL3KuLn5ZgLbbHZlm7dDusf7g4rM1HXtyddZQrpOLnsnwVYE7nCeOzuLfswQ6z8jn7a03
+          9c63iv7mWlAnn982TGY/24qsfJSirqJxXG3Vdw4R/K7+KC5INqDQhu9bIx2RfOxZUuKFdbb9t+Tz/oOXINRTltnfFgUf0VgFjEZy
+          VK6zlNzvSqoKbNUit0rCub0K/VEQvZYekTCOMjobDkkOC9lIvfLrEKZK+WdzlKk/xuvPCAy37Wi4xQejZ7U2AdAMPL0dReko5XOQ
+          bGI2Cbjt1OVfmDVLJnysARMbI3gRJqi/mTvfgpw7TzQSBQBFnn/NV4STjibixNfjE8PyQ2vEDdfA/C6csAx6ht/8pZiy7HvCRZ2w
           OG268BZIM9g+L8flnPmePcQ+i9dIIqCWq8rVtA8P9sNRHs1MKR+U7H3aOXCScMGX1u0w7oX3R/LMI4QsL+nLkNj+kB21oEYUw49H
           f9dqmY0b0dNTIlw50PXN+1/FUa9wCdrH66kMway4lVDpeo5cDqAYedc+McR2sgf1n18+aF1X/Z99xv0QW9H/OR56MkXiJi8FpYo0
           PEsfP40jMQlT5S3Cd2hHFvSyMUO7nfSXHTsZD/EggGISXDbnMmI+ZUJRu3hM1QQ9W3IwlULCzpQ9aIc/O1oC3NY3IC+H5ys/Id0e
