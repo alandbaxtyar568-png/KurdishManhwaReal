@@ -105,6 +105,7 @@ jobs:
 
               <application
                   android:allowBackup="true"
+                  android:largeHeap="true"
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher_round"
                   android:label="Kurdish Manhwa Real"
@@ -2177,12 +2178,31 @@ jobs:
           import com.google.mlkit.vision.text.latin.TextRecognizerOptions
           import org.json.JSONArray
           import org.json.JSONObject
+          import org.json.JSONTokener
           import java.io.ByteArrayOutputStream
           import java.net.URLEncoder
           import java.util.concurrent.Callable
 
           private const val WM = ViewGroup.LayoutParams.MATCH_PARENT
           private const val WW = ViewGroup.LayoutParams.WRAP_CONTENT
+
+          private const val JS_SCROLL =
+              "(function(){var k=window.__km={done:false};var n=0;var t=setInterval(function(){" +
+                  "var b=document.documentElement.scrollHeight-window.innerHeight;" +
+                  "window.scrollTo({top:window.scrollY+Math.round(window.innerHeight*0.9),left:0,behavior:'instant'});n++;" +
+                  "if(window.scrollY>=b-4||n>160){clearInterval(t);setTimeout(function(){" +
+                  "window.scrollTo({top:0,left:0,behavior:'instant'});k.done=true;},250);}" +
+                  "},80);})();"
+
+          private const val JS_IMGS =
+              "(function(){var o=[];var seen={};document.querySelectorAll('img').forEach(function(im){" +
+                  "var r=im.getBoundingClientRect();if(r.width<250||r.height<200)return;" +
+                  "var s=im.currentSrc||im.src||'';" +
+                  "if(!s||s.indexOf('data:')===0){s=im.getAttribute('data-src')||im.getAttribute('data-lazy-src')||im.getAttribute('data-original')||'';}" +
+                  "if(!s)return;try{s=new URL(s,location.href).href;}catch(e){return;}" +
+                  "var y=Math.round(r.top+window.scrollY);if(s.indexOf('http')!==0||seen[s+'|'+y])return;seen[s+'|'+y]=1;" +
+                  "o.push({src:s,x:r.left+window.scrollX,y:r.top+window.scrollY,w:r.width,h:r.height});});" +
+                  "return JSON.stringify({iw:window.innerWidth,imgs:o});})()"
 
           private fun JSONObject.s(name: String): String = if (isNull(name)) "" else optString(name, "")
 
@@ -2269,6 +2289,16 @@ jobs:
               private val topBars = LinearLayout(act)
               private lateinit var urlEt: EditText
               private lateinit var trBtn: TextView
+              private lateinit var chBtn: TextView
+              private val chOverlay = FrameLayout(act)
+              private val chItems = ArrayList<ChItem>()
+              private val chPending = ArrayList<ChItem>()
+              private var chGen = 0
+              private var chState = 0 // 0 ئامادە، 1 کار دەکات، 2 تەواو بوو
+              private var chImgTotal = 0
+              private var chImgDone = 0
+              private var chGemOut = 0
+              private var chGemDone = 0
               private lateinit var exitBtn: TextView
 
               var onFullscreen: ((Boolean) -> Unit)? = null
@@ -2342,6 +2372,12 @@ jobs:
                   tlp.marginEnd = dp(8)
                   row.addView(trBtn, tlp)
 
+                  chBtn = Ui.button(act, "", false) { chToggle() }
+                  val clp0 = LinearLayout.LayoutParams(WW, WW)
+                  clp0.marginEnd = dp(8)
+                  row.addView(chBtn, clp0)
+                  styleCh("⚡ هەموو چاپتەر", false)
+
                   val fsBtn = Ui.button(act, "⛶ تەواوی شاشە", false) { setFullscreen(true) }
                   val flp = LinearLayout.LayoutParams(WW, WW)
                   flp.marginEnd = dp(8)
@@ -2378,6 +2414,10 @@ jobs:
                   overlay.isClickable = false
                   overlay.isFocusable = false
                   frame.addView(overlay, FrameLayout.LayoutParams(WM, WM))
+                  chOverlay.layoutDirection = View.LAYOUT_DIRECTION_LTR
+                  chOverlay.isClickable = false
+                  chOverlay.isFocusable = false
+                  frame.addView(chOverlay, FrameLayout.LayoutParams(WM, WM))
 
                   exitBtn = Ui.tv(act, "✕", 16f, Color.WHITE, true)
                   exitBtn.gravity = Gravity.CENTER
@@ -2411,6 +2451,7 @@ jobs:
                       override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                           navGen++
                           clearOverlay()
+                          chCancel()
                           if (url != null) urlEt.setText(url)
                       }
 
@@ -2455,6 +2496,7 @@ jobs:
 
                   web.setOnScrollChangeListener { _, sx, sy, _, _ ->
                       reposition(sx, sy)
+                      if (chItems.isNotEmpty()) chSync()
                       if (translating) {
                           val now = SystemClock.uptimeMillis()
                           handler.removeCallbacks(ocrRunnable)
@@ -2463,6 +2505,9 @@ jobs:
                   }
 
                   web.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, orr, ob ->
+                      if (chItems.isNotEmpty()) {
+                          if (r - l != orr - ol) chCancel() else chSync()
+                      }
                       if (r - l != orr - ol || b - t != ob - ot) {
                           clearOverlay()
                           if (translating) schedule(350)
@@ -2529,6 +2574,7 @@ jobs:
               }
 
               fun destroy() {
+                  chGen++
                   handler.removeCallbacksAndMessages(null)
                   try {
                       web.stopLoading()
@@ -2536,6 +2582,199 @@ jobs:
                       web.destroy()
                   } catch (_: Exception) { }
                   try { recognizer.close() } catch (_: Exception) { }
+              }
+
+
+              // ---------------- هەموو چاپتەر بە یەک جار ----------------
+
+              private fun styleCh(text: String, active: Boolean) {
+                  chBtn.text = text
+                  chBtn.setTextColor(if (active) Color.WHITE else Ui.TEXT)
+                  chBtn.background = if (active) Ui.grad(act, Ui.ACCENT, Ui.ACCENT2, 14) else Ui.round(act, Ui.SURFACE2, 14)
+              }
+
+              private fun chCancel() {
+                  chGen++
+                  chState = 0
+                  chItems.clear()
+                  chPending.clear()
+                  chOverlay.removeAllViews()
+                  if (::chBtn.isInitialized) styleCh("⚡ هەموو چاپتەر", false)
+              }
+
+              private fun chToggle() {
+                  if (chState != 0) chCancel() else chStart()
+              }
+
+              private fun chStart() {
+                  if (web.width <= 0 || web.windowToken == null) return
+                  translating = false
+                  handler.removeCallbacks(ocrRunnable)
+                  styleTr()
+                  clearOverlay()
+                  chCancel()
+                  chState = 1
+                  val gen = chGen
+                  styleCh("⏳ ئامادەکردنی لاپەڕە...", true)
+                  web.evaluateJavascript(JS_SCROLL, null)
+                  val t0 = SystemClock.uptimeMillis()
+                  val poll = object : Runnable {
+                      override fun run() {
+                          if (gen != chGen) return
+                          web.evaluateJavascript("(window.__km&&window.__km.done)?'1':'0'") { r ->
+                              if (gen == chGen) {
+                                  val done = r != null && r.contains("1")
+                                  if (done || SystemClock.uptimeMillis() - t0 > 15000) {
+                                      chCollect(gen)
+                                  } else {
+                                      handler.postDelayed(this, 200)
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  handler.postDelayed(poll, 300)
+              }
+
+              private fun chFail(msg: String) {
+                  chState = 0
+                  styleCh(msg, false)
+                  handler.postDelayed({ if (chState == 0) styleCh("⚡ هەموو چاپتەر", false) }, 2500)
+              }
+
+              private fun chCollect(gen: Int) {
+                  web.evaluateJavascript(JS_IMGS) { raw ->
+                      if (gen != chGen) return@evaluateJavascript
+                      val parsed: JSONObject? = try {
+                          JSONObject(JSONTokener(raw).nextValue() as String)
+                      } catch (e: Exception) {
+                          null
+                      }
+                      val arr = parsed?.optJSONArray("imgs")
+                      val iw = parsed?.optDouble("iw", 0.0) ?: 0.0
+                      if (arr == null || arr.length() == 0 || iw <= 0.0) {
+                          chFail("✗ وێنەی چاپتەر نەدۆزرایەوە")
+                          return@evaluateJavascript
+                      }
+                      val ratio = (web.width / iw).toFloat()
+                      val ua = web.settings.userAgentString
+                      val ref = web.url ?: ""
+                      val cm = CookieManager.getInstance()
+                      chImgTotal = arr.length()
+                      chImgDone = 0
+                      chGemOut = 0
+                      chGemDone = 0
+                      chPending.clear()
+                      chProgress()
+                      for (i in 0 until arr.length()) {
+                          val o = arr.getJSONObject(i)
+                          val img = Chapter.Img(
+                              o.getString("src"), o.getDouble("x").toFloat(), o.getDouble("y").toFloat(),
+                              o.getDouble("w").toFloat(), o.getDouble("h").toFloat()
+                          )
+                          Chapter.workers.execute {
+                              val items: List<ChItem> = try {
+                                  if (gen != chGen) {
+                                      emptyList()
+                                  } else {
+                                      val bytes = Chapter.fetch(img.src, ref, ua, cm.getCookie(img.src))
+                                      if (bytes == null || gen != chGen) emptyList() else Chapter.ocr(recognizer, bytes, img, ratio)
+                                  }
+                              } catch (e: Throwable) {
+                                  emptyList()
+                              }
+                              handler.post { chOnImage(gen, items) }
+                          }
+                      }
+                  }
+              }
+
+              private fun chOnImage(gen: Int, items: List<ChItem>) {
+                  if (gen != chGen) return
+                  chImgDone++
+                  for (ci in items) {
+                      if (Fast.isJunk(ci.text)) continue
+                      chItems.add(ci)
+                      chPending.add(ci)
+                      Chapter.google(ci.text) { r ->
+                          if (r != null) handler.post { chApply(gen, ci, r, false) }
+                      }
+                  }
+                  if (chPending.size >= 18 || chImgDone >= chImgTotal) chFlush(gen)
+                  chProgress()
+                  chSync()
+              }
+
+              private fun chFlush(gen: Int) {
+                  if (chPending.isEmpty()) return
+                  val batch = chPending.sortedBy { it.py }
+                  chPending.clear()
+                  for (chunk in batch.chunked(24)) {
+                      chGemOut++
+                      Chapter.gemini(chunk.map { it.text }) { res ->
+                          handler.post { chOnGemini(gen, chunk, res) }
+                      }
+                  }
+              }
+
+              private fun chOnGemini(gen: Int, chunk: List<ChItem>, res: List<String>?) {
+                  if (gen != chGen) return
+                  chGemOut--
+                  chGemDone += chunk.size
+                  for ((k, ci) in chunk.withIndex()) {
+                      if (res != null && k < res.size) chApply(gen, ci, res[k], true) else ci.gem = true
+                  }
+                  chProgress()
+                  chSync()
+              }
+
+              private fun chApply(gen: Int, ci: ChItem, text: String, gem: Boolean) {
+                  if (gen != chGen) return
+                  if (!gem && ci.gem) return
+                  if (gem) ci.gem = true
+                  val old = ci.tr
+                  ci.tr = text
+                  val v = ci.view
+                  if (v != null && text.isNotEmpty() && old != text) Overlay.swap(v, text)
+                  if (!gem) chSync()
+              }
+
+              private fun chProgress() {
+                  if (chState == 0) return
+                  val finished = chImgDone >= chImgTotal && chPending.isEmpty() && chGemOut <= 0
+                  if (finished) {
+                      chState = 2
+                      styleCh("✓ چاپتەر وەرگێڕدرا (لابردن)", true)
+                  } else {
+                      styleCh("⏳ " + chImgDone + "/" + chImgTotal + " وێنە · " + chGemDone + "/" + chItems.size + " دەق", true)
+                  }
+              }
+
+              /** تەنها دەقی نزیک لە شاشە وەک View دروست دەکرێت، ئەوانی تر لادەبرێن (بۆ خێرایی و میمۆری) */
+              private fun chSync() {
+                  if (chItems.isEmpty()) return
+                  val sx = web.scrollX
+                  val sy = web.scrollY
+                  val h = web.height
+                  for (ci in chItems) {
+                      val tr = ci.tr
+                      val near = ci.py + ci.h > sy - 2 * h && ci.py < sy + 3 * h
+                      var v = ci.view
+                      if (near && !tr.isNullOrEmpty()) {
+                          if (v == null) {
+                              v = Overlay.make(act, tr, ci.bg, ci.fill, false, ci.inset)
+                              val lp = FrameLayout.LayoutParams(ci.w, ci.h)
+                              lp.gravity = Gravity.TOP or Gravity.START
+                              chOverlay.addView(v, lp)
+                              ci.view = v
+                          }
+                          v.translationX = (ci.px - sx).toFloat()
+                          v.translationY = (ci.py - sy).toFloat()
+                      } else if (v != null) {
+                          chOverlay.removeView(v)
+                          ci.view = null
+                      }
+                  }
               }
 
               // ---------------- وەرگێڕان ----------------
@@ -2550,6 +2789,7 @@ jobs:
                   translating = !translating
                   styleTr()
                   if (translating) {
+                      chCancel()
                       schedule(100)
                   } else {
                       handler.removeCallbacks(ocrRunnable)
@@ -2802,7 +3042,7 @@ jobs:
               private val cache = ConcurrentHashMap<String, String>()
               private const val GOOGLE_GRACE_MS = 2200L
 
-              private fun isJunk(t: String): Boolean {
+              fun isJunk(t: String): Boolean {
                   val l = t.lowercase()
                   if (l.contains(".com") || l.contains("www") || l.contains("http") || l.contains("asura") || l.contains("scns")) return true
                   return t.count { it.isLetter() } < 2
@@ -2816,7 +3056,7 @@ jobs:
                       .replace(Regex("\\s+([؟!.,،])"), "$1")
                       .replace(Regex("\\s+"), " ").trim()
 
-              private fun google(text: String): String? {
+              fun google(text: String): String? {
                   return try {
                       val url = "https://translate.googleapis.com/translate_a/single" +
                           "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text.take(500), "UTF-8")
@@ -2847,7 +3087,7 @@ jobs:
                   return JSONObject().put("contents", JSONArray().put(content)).put("generationConfig", cfg).toString()
               }
 
-              private fun ai(texts: List<String>): List<String>? {
+              fun ai(texts: List<String>): List<String>? {
                   return try {
                       val arr = JSONArray()
                       for (t in texts) arr.put(t)
@@ -3207,6 +3447,242 @@ jobs:
                       tv.text = text
                       tv.animate().alpha(1f).setDuration(110).start()
                   }.start()
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Chapter.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/Chapter.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.graphics.BitmapRegionDecoder
+          import android.graphics.Color
+          import android.graphics.Rect
+          import android.widget.TextView
+          import com.google.android.gms.tasks.Tasks
+          import com.google.mlkit.vision.common.InputImage
+          import com.google.mlkit.vision.text.TextRecognizer
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.util.concurrent.ExecutorService
+          import java.util.concurrent.Executors
+          import java.util.concurrent.TimeUnit
+
+          /** یەک دەقی دۆزراوە لەسەر چاپتەر. هەموو ژمارەکان بە پیکسێلی WebView ـن (ناوەڕۆکی لاپەڕە، نەک شاشە) */
+          class ChItem(
+              val text: String,
+              val px: Int,
+              val py: Int,
+              val w: Int,
+              val h: Int,
+              val bg: Int,
+              val fill: Bitmap?,
+              val inset: IntArray?
+          ) {
+              var tr: String? = null
+              var gem = false
+              var view: TextView? = null
+          }
+
+          /**
+           * وەرگێڕانی هەموو چاپتەر بە یەک جار:
+           *  وێنەکان هاوکات دادەبەزێنرێن، OCR دەکرێن، Google یەکسەر دەقی خێرا دەدات،
+           *  Gemini بە دەستە-دەستە دەقی مرۆڤانە دەدات و جێگەی دەگرێتەوە.
+           */
+          object Chapter {
+              class Img(val src: String, val x: Float, val y: Float, val w: Float, val h: Float)
+
+              private const val TILE = 1700
+              private const val OVER = 140
+
+              val workers: ExecutorService = Executors.newFixedThreadPool(4)
+              private val gPool: ExecutorService = Executors.newFixedThreadPool(8)
+              private val aiPool: ExecutorService = Executors.newFixedThreadPool(4)
+
+              fun google(text: String, cb: (String?) -> Unit) {
+                  gPool.execute { cb(Fast.google(text)) }
+              }
+
+              fun gemini(texts: List<String>, cb: (List<String>?) -> Unit) {
+                  aiPool.execute {
+                      var r = Fast.ai(texts)
+                      if (r == null) {
+                          try { Thread.sleep(700) } catch (_: InterruptedException) { }
+                          r = Fast.ai(texts)
+                      }
+                      cb(r)
+                  }
+              }
+
+              fun fetch(url: String, referer: String, ua: String, cookie: String?): ByteArray? {
+                  for (attempt in 0..1) {
+                      var conn: HttpURLConnection? = null
+                      try {
+                          conn = URL(url).openConnection() as HttpURLConnection
+                          conn.connectTimeout = 6000
+                          conn.readTimeout = 12000
+                          conn.instanceFollowRedirects = true
+                          conn.setRequestProperty("User-Agent", ua)
+                          if (referer.isNotEmpty()) conn.setRequestProperty("Referer", referer)
+                          conn.setRequestProperty("Accept", "image/webp,image/jpeg,image/png,image/*;q=0.8")
+                          if (!cookie.isNullOrEmpty()) conn.setRequestProperty("Cookie", cookie)
+                          if (conn.responseCode in 200..299) {
+                              val b = conn.inputStream.use { it.readBytes() }
+                              if (b.size > 2000) return b
+                          }
+                      } catch (e: Exception) {
+                          // دووبارە هەوڵ دەدرێتەوە
+                      } finally {
+                          try { conn?.disconnect() } catch (_: Exception) { }
+                      }
+                  }
+                  return null
+              }
+
+              private fun lum(c: Int): Int = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
+
+              private fun sampleBg(bmp: Bitmap, r: Rect): Int {
+                  val cx = (r.left + r.right) / 2
+                  val cy = (r.top + r.bottom) / 2
+                  val m = 6
+                  val pts = listOf(
+                      (r.left - m) to (r.top - m), cx to (r.top - m), (r.right + m) to (r.top - m),
+                      (r.left - m) to cy, (r.right + m) to cy,
+                      (r.left - m) to (r.bottom + m), cx to (r.bottom + m), (r.right + m) to (r.bottom + m)
+                  )
+                  val cols = ArrayList<Int>()
+                  for ((x, y) in pts) {
+                      if (x in 0 until bmp.width && y in 0 until bmp.height) cols.add(bmp.getPixel(x, y))
+                  }
+                  if (cols.isEmpty()) return Color.WHITE
+                  cols.sortBy { lum(it) }
+                  return cols[cols.size / 2] or (0xFF shl 24)
+              }
+
+              /** یەک وێنەی چاپتەر: دەبڕدرێت بە پارچە (tile) ـی بچووک، هەر پارچەیەک OCR دەکرێت */
+              fun ocr(rec: TextRecognizer, bytes: ByteArray, img: Img, ratio: Float): List<ChItem> {
+                  val bo = BitmapFactory.Options()
+                  bo.inJustDecodeBounds = true
+                  BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bo)
+                  val sw = bo.outWidth
+                  val sh = bo.outHeight
+                  if (sw <= 0 || sh <= 0) return emptyList()
+
+                  var sample = 1
+                  while (sw / (sample * 2) >= 700) sample *= 2
+                  val fx = img.w / sw
+                  val fy = img.h / sh
+                  val tileSrc = TILE * sample
+                  val overSrc = OVER * sample
+
+                  val decoder = try {
+                      BitmapRegionDecoder.newInstance(bytes, 0, bytes.size, false)
+                  } catch (e: Throwable) {
+                      null
+                  }
+                  var whole: Bitmap? = null
+                  if (decoder == null) {
+                      val o = BitmapFactory.Options()
+                      o.inSampleSize = sample
+                      val w0 = try {
+                          BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+                      } catch (e: Throwable) {
+                          null
+                      }
+                      if (w0 == null) return emptyList()
+                      whole = w0
+                  }
+
+                  val out = ArrayList<ChItem>()
+                  var k0 = 0
+                  while (k0 < sh && out.size < 60) {
+                      val k1 = minOf(k0 + tileSrc, sh)
+                      val rs = maxOf(0, k0 - overSrc)
+                      val re = minOf(sh, k1 + overSrc)
+                      val tile: Bitmap? = try {
+                          if (decoder != null) {
+                              val o = BitmapFactory.Options()
+                              o.inSampleSize = sample
+                              decoder.decodeRegion(Rect(0, rs, sw, re), o)
+                          } else {
+                              val wb = whole!!
+                              val ty = rs / sample
+                              val th = minOf(wb.height - ty, (re - rs) / sample)
+                              if (th > 8) Bitmap.createBitmap(wb, 0, ty, wb.width, th) else null
+                          }
+                      } catch (e: Throwable) {
+                          null
+                      }
+                      if (tile != null) {
+                          try {
+                              out.addAll(tileBlocks(rec, tile, rs, k0, k1, sample, fx, fy, img, ratio))
+                          } catch (e: Throwable) {
+                              // ئەم پارچەیە تێپەڕ دەکرێت
+                          }
+                          try { tile.recycle() } catch (_: Throwable) { }
+                      }
+                      k0 = k1
+                  }
+                  try { decoder?.recycle() } catch (_: Throwable) { }
+                  try { whole?.recycle() } catch (_: Throwable) { }
+                  return out
+              }
+
+              private fun tileBlocks(
+                  rec: TextRecognizer, tile: Bitmap, rs: Int, k0: Int, k1: Int,
+                  sample: Int, fx: Float, fy: Float, img: Img, ratio: Float
+              ): List<ChItem> {
+                  val vt = Tasks.await(rec.process(InputImage.fromBitmap(tile, 0)), 25, TimeUnit.SECONDS)
+                  val raw = ArrayList<Merge.Item>()
+                  for (b in vt.textBlocks) {
+                      val box = b.boundingBox ?: continue
+                      val t = b.text.replace("\n", " ").trim()
+                      val nonSpace = t.count { !it.isWhitespace() }
+                      if (nonSpace < 3 || t.count { it.isLetter() } < 2) continue
+                      if (t.count { it.isLetter() }.toFloat() / nonSpace < 0.6f) continue
+                      raw.add(Merge.Item(t, Rect(box)))
+                  }
+
+                  fun vx(bx: Int): Float = (img.x + bx * sample * fx) * ratio
+                  fun vy(by: Int): Float = (img.y + (rs + by * sample) * fy) * ratio
+
+                  val imgL = img.x * ratio
+                  val imgR = (img.x + img.w) * ratio
+                  val imgT = img.y * ratio
+                  val imgB = (img.y + img.h) * ratio
+
+                  val res = ArrayList<ChItem>()
+                  for (item in Merge.run(raw)) {
+                      val box = item.box
+                      val centerSrc = rs + ((box.top + box.bottom) / 2) * sample
+                      if (centerSrc < k0 || centerSrc >= k1) continue // ئەم دەقە لە پارچەی دراوسێدا دەگیرێت
+
+                      val bl = vx(box.left)
+                      val bt = vy(box.top)
+                      val br = vx(box.right)
+                      val bb = vy(box.bottom)
+                      val padX = (br - bl) * 0.12f + 10f
+                      val padY = (bb - bt) * 0.14f + 8f
+                      val left = maxOf(bl - padX, imgL).toInt()
+                      val top = maxOf(bt - padY, imgT).toInt()
+                      val right = minOf(br + padX, imgR).toInt()
+                      val bottom = minOf(bb + padY, imgB).toInt()
+                      if (right - left < 12 || bottom - top < 12) continue
+
+                      val fr = Fill.build(tile, box)
+                      var inset: IntArray? = null
+                      if (fr != null) {
+                          inset = intArrayOf(
+                              (vx(fr.rect.left).toInt() - left).coerceAtLeast(0),
+                              (vy(fr.rect.top).toInt() - top).coerceAtLeast(0),
+                              (right - vx(fr.rect.right).toInt()).coerceAtLeast(0),
+                              (bottom - vy(fr.rect.bottom).toInt()).coerceAtLeast(0)
+                          )
+                      }
+                      res.add(ChItem(item.text, left, top, right - left, bottom - top, sampleBg(tile, box), fr?.bmp, inset))
+                  }
+                  return res
               }
           }
           KMEOF
