@@ -2009,23 +2009,29 @@ jobs:
                       .addOnSuccessListener { visionText ->
                           if (!started || gen != generation) return@addOnSuccessListener
                           val blocks = ArrayList<Block>()
+                          val raw = ArrayList<Merge.Item>()
                           for (b in visionText.textBlocks) {
                               val box = b.boundingBox ?: continue
                               val t = b.text.replace("\n", " ").trim()
                               if (t.count { it.isLetter() } < 2) continue
                               if (box.top < h * topIgnore || box.bottom > h * (1f - bottomIgnore)) continue
+                              raw.add(Merge.Item(t, Rect(box)))
+                          }
+                          // بلۆکە نزیکەکان (هەمان بالۆن) یەک بکەرەوە
+                          for (item in Merge.run(raw)) {
+                              val box = item.box
                               val screenRect = Rect(
                                   (box.left / scale).toInt(), (box.top / scale).toInt(),
                                   (box.right / scale).toInt(), (box.bottom / scale).toInt()
                               )
                               val fr = Fill.build(bmp, box)
-                              val core = fr?.let {
+                              val core = fr?.let { f ->
                                   Rect(
-                                      (it.rect.left / scale).toInt(), (it.rect.top / scale).toInt(),
-                                      (it.rect.right / scale).toInt(), (it.rect.bottom / scale).toInt()
+                                      (f.rect.left / scale).toInt(), (f.rect.top / scale).toInt(),
+                                      (f.rect.right / scale).toInt(), (f.rect.bottom / scale).toInt()
                                   )
                               }
-                              blocks.add(Block(t, screenRect, sampleBg(bmp, box), fr?.bmp, core))
+                              blocks.add(Block(item.text, screenRect, sampleBg(bmp, box), fr?.bmp, core))
                               if (blocks.size >= 10) break
                           }
                           if (blocks.isNotEmpty()) translateBlocks(blocks, gen)
@@ -2661,25 +2667,30 @@ jobs:
                               return@addOnSuccessListener
                           }
                           val blocks = ArrayList<Block>()
+                          val raw = ArrayList<Merge.Item>()
                           for (b in vt.textBlocks) {
                               val box = b.boundingBox ?: continue
                               val t = b.text.replace("\n", " ").trim()
                               val nonSpace = t.count { !it.isWhitespace() }
                               if (nonSpace < 3 || t.count { it.isLetter() } < 2) continue
                               if (t.count { it.isLetter() }.toFloat() / nonSpace < 0.6f) continue
+                              raw.add(Merge.Item(t, Rect(box)))
+                          }
+                          for (item in Merge.run(raw)) {
+                              val box = item.box
                               val r = Rect(
                                   (box.left / scale).toInt(), (box.top / scale).toInt(),
                                   (box.right / scale).toInt(), (box.bottom / scale).toInt()
                               )
                               if (covered(r.left + sx, r.top + sy, r.right + sx, r.bottom + sy)) continue
                               val fr = Fill.build(bmp, box)
-                              val core = fr?.let {
+                              val core = fr?.let { f ->
                                   Rect(
-                                      (it.rect.left / scale).toInt(), (it.rect.top / scale).toInt(),
-                                      (it.rect.right / scale).toInt(), (it.rect.bottom / scale).toInt()
+                                      (f.rect.left / scale).toInt(), (f.rect.top / scale).toInt(),
+                                      (f.rect.right / scale).toInt(), (f.rect.bottom / scale).toInt()
                                   )
                               }
-                              blocks.add(Block(t, r, sampleBg(bmp, box), fr?.bmp, core))
+                              blocks.add(Block(item.text, r, sampleBg(bmp, box), fr?.bmp, core))
                               if (blocks.size >= 14) break
                           }
                           if (blocks.isEmpty()) {
@@ -2768,6 +2779,7 @@ jobs:
           import android.graphics.drawable.BitmapDrawable
           import android.graphics.drawable.GradientDrawable
           import android.graphics.drawable.InsetDrawable
+          import android.os.SystemClock
           import android.util.TypedValue
           import android.view.Gravity
           import android.view.View
@@ -2788,6 +2800,7 @@ jobs:
           object Fast {
               private val pool = Executors.newFixedThreadPool(8)
               private val cache = ConcurrentHashMap<String, String>()
+              private const val GOOGLE_GRACE_MS = 2200L
 
               private fun isJunk(t: String): Boolean {
                   val l = t.lowercase()
@@ -2795,8 +2808,13 @@ jobs:
                   return t.count { it.isLetter() } < 2
               }
 
+              // پیتی عەرەبی بگۆڕە بە پیتی کوردی + هەموو پیتە لاتینییەکان لابدە
               private fun noLatin(s: String): String =
-                  s.replace(Regex("[A-Za-z]+"), "").replace(Regex("\\s+"), " ").trim()
+                  s.replace(Regex("[A-Za-z]+"), "")
+                      .replace('ي', 'ی').replace('ى', 'ی').replace('ك', 'ک')
+                      .replace('ة', 'ە').replace('ؤ', 'ۆ').replace('ھ', 'ه')
+                      .replace(Regex("\\s+([؟!.,،])"), "$1")
+                      .replace(Regex("\\s+"), " ").trim()
 
               private fun google(text: String): String? {
                   return try {
@@ -2824,7 +2842,7 @@ jobs:
               private fun geminiBody(prompt: String, thinkingOff: Boolean): String {
                   val part = JSONObject().put("text", prompt)
                   val content = JSONObject().put("parts", JSONArray().put(part))
-                  val cfg = JSONObject().put("temperature", 0.35).put("responseMimeType", "application/json")
+                  val cfg = JSONObject().put("temperature", 0.5).put("responseMimeType", "application/json")
                   if (thinkingOff) cfg.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
                   return JSONObject().put("contents", JSONArray().put(content)).put("generationConfig", cfg).toString()
               }
@@ -2833,13 +2851,22 @@ jobs:
                   return try {
                       val arr = JSONArray()
                       for (t in texts) arr.put(t)
-                      val prompt = "Translate these English snippets (OCR from ONE Korean manhwa page, in reading order) into natural, " +
-                          "fluent, everyday spoken Kurdish Sorani, like a skilled human comic translator: keep the tone, emotion and " +
-                          "personality of each speaker, make sentences flow well in context. " +
-                          "Rules: (1) Arabic script only, NEVER any Latin letter (transliterate names and sound effects). " +
-                          "(2) Fix obvious OCR mistakes using the other snippets. " +
-                          "(3) Watermark, website name or meaningless garbage -> empty string. " +
-                          "(4) Return ONLY a JSON array of exactly " + texts.size + " strings, same order.\n" + arr.toString()
+                      val prompt = "You are a professional Kurdish Sorani (Central Kurdish, Arabic script) translator who localizes " +
+                          "Korean/Chinese manhwa and webtoons for Kurdish readers. Below is a JSON array of English snippets read by OCR " +
+                          "from ONE page, in reading order (top to bottom). Each item is one speech bubble or narration box; OCR may break " +
+                          "lines or words oddly, so first rebuild the real English sentence in your head.\n" +
+                          "HOW TO TRANSLATE: never translate word by word and never copy English sentence structure. Understand who is " +
+                          "speaking to whom and the emotion (anger, fear, sarcasm, respect), then say it exactly the way a native Kurdish " +
+                          "speaker would say it out loud: natural Kurdish word order (verb at the end), correct verb conjugation and " +
+                          "pronoun suffixes, natural idioms, no stiff or bookish phrasing. Use everyday spoken Sorani, but keep respectful " +
+                          "wording for elders, masters and nobles. Keep each line short enough to fit in a bubble (about the same length " +
+                          "as the English or shorter). Keep names consistent across the page.\n" +
+                          "QUALITY EXAMPLE: 'What more do you want from me? Why are you after my life?' -> " +
+                          "'چیتر چیت لە من دەوێت؟ بۆچی بە دوای گیانی مندا دەگەڕێیت؟' (natural), NOT a literal mirror of the English.\n" +
+                          "RULES: (1) Kurdish Sorani Arabic script only, use Kurdish letters (ە ێ ۆ ڕ ڵ ک ی), NEVER any Latin letter - " +
+                          "transliterate names and sound effects. (2) Fix obvious OCR mistakes using the other snippets. " +
+                          "(3) Watermark, website name, scanlation credit or meaningless garbage -> empty string. " +
+                          "(4) Return ONLY a JSON array of exactly " + texts.size + " strings, same order, no commentary.\n" + arr.toString()
                       val resp = try {
                           Net.callGemini(geminiBody(prompt, true))
                       } catch (e: Exception) {
@@ -2880,6 +2907,7 @@ jobs:
                   }
 
                   val lock = Any()
+                  val t0 = SystemClock.uptimeMillis()
                   var aiState = 0 // 0 چاوەڕێ، 1 سەرکەوتوو، 2 شکستی هێنا
                   var remaining = need.size
 
@@ -2904,6 +2932,16 @@ jobs:
                   for (i in need) {
                       pool.execute {
                           val r = google(texts[i])
+                          // وەرگێڕانی Google خاوە؛ چاوەڕێی Gemini دەکەین و تەنها ئەگەر درەنگ کرد یان شکستی هێنا نیشانی دەدەین
+                          var settled = false
+                          var waited = SystemClock.uptimeMillis() - t0
+                          while (!settled && waited < GOOGLE_GRACE_MS) {
+                              synchronized(lock) { settled = aiState != 0 }
+                              if (!settled) {
+                                  try { Thread.sleep(40) } catch (_: InterruptedException) {}
+                                  waited = SystemClock.uptimeMillis() - t0
+                              }
+                          }
                           synchronized(lock) {
                               remaining--
                               if (aiState != 1) {
@@ -2920,8 +2958,10 @@ jobs:
           class FillResult(val bmp: Bitmap, val rect: Rect)
 
           /**
-           * دەق دەسڕێتەوە بەبێ ئەوەی پشتەوە بگۆڕێت: تەنها پیکسێلەکانی دەق (و دەوروبەریان) بە ڕەنگی
-           * نزیکترین پشتەوە دەگۆڕدرێن، هەموو پیکسێلەکانی تر (بالۆن، هێڵ، وێنە) وەک خۆیان دەمێننەوە.
+           * دەقی ئینگلیزی دەسڕێتەوە:
+           *  - پشتەوەی ساف (بالۆنی سپی...) = بە ڕەنگی پشتەوە پڕدەکرێتەوە، هیچ شوێنەوارێک نامێنێت
+           *  - پشتەوەی وێنە/گرادیەنت = پیکسێلی دەق لە دەوروبەرەوە دەخرێتە ناو (inpainting)، بێ هێڵی لار
+           *  - هێڵی بالۆن و وێنەی پشتەوە (ئەوانەی دەگەنە لێواری ناوچەکە) دەستیان لێ نادرێت
            */
           object Fill {
               private fun lum(c: Int): Int = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
@@ -2929,30 +2969,12 @@ jobs:
               private fun px(bmp: Bitmap, x: Int, y: Int): Int =
                   bmp.getPixel(x.coerceIn(0, bmp.width - 1), y.coerceIn(0, bmp.height - 1))
 
-              private fun ringColor(bmp: Bitmap, l: Int, t: Int, r: Int, b: Int): Int {
-                  val d = 3
-                  val cols = ArrayList<Int>()
-                  for (k in 0..7) {
-                      val x = l + (r - l) * k / 7
-                      val y = t + (b - t) * k / 7
-                      cols.add(px(bmp, x, t - d))
-                      cols.add(px(bmp, x, b + d))
-                      cols.add(px(bmp, l - d, y))
-                      cols.add(px(bmp, r + d, y))
-                  }
-                  cols.sortBy { lum(it) }
-                  return cols[cols.size / 2] or (0xFF shl 24)
-              }
-
-              private fun edge(bmp: Bitmap, x0: Int, dir: Int, y: Int, fallback: Int): Int {
-                  val x = x0 + dir * 3
-                  if (x < 0 || x >= bmp.width || y < 0 || y >= bmp.height) return fallback
-                  return bmp.getPixel(x, y) or (0xFF shl 24)
-              }
+              private fun dev(c: Int, bg: Int): Int =
+                  maxOf(abs(Color.red(c) - Color.red(bg)), abs(Color.green(c) - Color.green(bg)), abs(Color.blue(c) - Color.blue(bg)))
 
               fun build(bmp: Bitmap, box: Rect): FillResult? {
                   return try {
-                      val m = 4
+                      val m = 6
                       val l = (box.left - m).coerceIn(0, bmp.width - 1)
                       val t = (box.top - m).coerceIn(0, bmp.height - 1)
                       val r = (box.right + m).coerceIn(l + 1, bmp.width)
@@ -2963,61 +2985,183 @@ jobs:
 
                       val src = IntArray(w * h)
                       bmp.getPixels(src, 0, w, l, t, w, h)
-                      val bg = ringColor(bmp, l, t, r, b)
-                      val br = Color.red(bg)
-                      val bgc = Color.green(bg)
-                      val bb = Color.blue(bg)
 
-                      // ١) پیکسێلەکانی دەق: ڕەنگیان لە پشتەوە جیاوازە
-                      val mask = BooleanArray(w * h)
-                      for (i in src.indices) {
-                          val c = src[i]
-                          val d = maxOf(abs(Color.red(c) - br), abs(Color.green(c) - bgc), abs(Color.blue(c) - bb))
-                          mask[i] = d > 38
+                      // ڕەنگی پشتەوە لە ڕینگی دەرەوەی ناوچەکە
+                      val ring = ArrayList<Int>()
+                      val d = 3
+                      for (k in 0..11) {
+                          val x = l + (r - l) * k / 11
+                          val y = t + (b - t) * k / 11
+                          ring.add(px(bmp, x, t - d)); ring.add(px(bmp, x, b + d))
+                          ring.add(px(bmp, l - d, y)); ring.add(px(bmp, r + d, y))
                       }
-                      // ٢) فراوانکردن بە ٢ پیکسێل بۆ سڕینەوەی لێواری نەرمی پیتەکان
+                      ring.sortBy { lum(it) }
+                      val bg = ring[ring.size / 2] or (0xFF shl 24)
+                      val devs = ring.map { dev(it, bg) }.sorted()
+                      val uniform = devs[(devs.size * 8) / 10] < 26
+
+                      // ١) پیکسێلەکانی دەق
+                      val thr = if (uniform) 30 else 40
+                      val raw = BooleanArray(w * h)
+                      for (i in src.indices) raw[i] = dev(src[i], bg) > thr
+
+                      // ٢) ئەو پارچە پەیوەستانە لابەرە کە دەگەنە لێواری ناوچەکە (هێڵی بالۆن / وێنەی پشتەوە)
+                      val label = IntArray(w * h)
+                      val stack = IntArray(w * h)
+                      var nextLabel = 0
+                      val keepLabel = ArrayList<Boolean>()
+                      for (start in 0 until w * h) {
+                          if (!raw[start] || label[start] != 0) continue
+                          nextLabel++
+                          var sp = 0
+                          stack[sp++] = start
+                          label[start] = nextLabel
+                          var touches = false
+                          while (sp > 0) {
+                              val p = stack[--sp]
+                              val x = p % w
+                              val y = p / w
+                              if (x == 0 || y == 0 || x == w - 1 || y == h - 1) touches = true
+                              if (x > 0 && raw[p - 1] && label[p - 1] == 0) { label[p - 1] = nextLabel; stack[sp++] = p - 1 }
+                              if (x < w - 1 && raw[p + 1] && label[p + 1] == 0) { label[p + 1] = nextLabel; stack[sp++] = p + 1 }
+                              if (y > 0 && raw[p - w] && label[p - w] == 0) { label[p - w] = nextLabel; stack[sp++] = p - w }
+                              if (y < h - 1 && raw[p + w] && label[p + w] == 0) { label[p + w] = nextLabel; stack[sp++] = p + w }
+                          }
+                          keepLabel.add(touches)
+                      }
+                      val mask = BooleanArray(w * h)
+                      for (i in 0 until w * h) {
+                          val lb = label[i]
+                          mask[i] = lb != 0 && !keepLabel[lb - 1]
+                      }
+
+                      // ٣) فراوانکردن بە ٣ پیکسێل بۆ سڕینەوەی لێوارە نەرمەکانی پیتەکان
+                      val rad = 3
                       val tmp = BooleanArray(w * h)
                       for (y in 0 until h) for (x in 0 until w) {
                           var hit = false
-                          var k = maxOf(0, x - 2)
-                          val e = minOf(w - 1, x + 2)
-                          while (k <= e) {
-                              if (mask[y * w + k]) { hit = true; break }
-                              k++
-                          }
+                          var k = maxOf(0, x - rad)
+                          val e = minOf(w - 1, x + rad)
+                          while (k <= e) { if (mask[y * w + k]) { hit = true; break }; k++ }
                           tmp[y * w + x] = hit
                       }
                       for (y in 0 until h) for (x in 0 until w) {
                           var hit = false
-                          var k = maxOf(0, y - 2)
-                          val e = minOf(h - 1, y + 2)
-                          while (k <= e) {
-                              if (tmp[k * w + x]) { hit = true; break }
-                              k++
-                          }
+                          var k = maxOf(0, y - rad)
+                          val e = minOf(h - 1, y + rad)
+                          while (k <= e) { if (tmp[k * w + x]) { hit = true; break }; k++ }
                           mask[y * w + x] = hit
                       }
-                      // ٣) پیکسێلی دەق بە ڕەنگی لای چەپ و ڕاستی هەمان ڕیز دەگۆڕدرێت
+                      // پیکسێلی هێڵی بالۆن/وێنەی پارێزراو هەرگیز نەسڕێتەوە
+                      for (i in 0 until w * h) {
+                          val lb = label[i]
+                          if (lb != 0 && keepLabel[lb - 1]) mask[i] = false
+                      }
+
                       val out = src.copyOf()
-                      for (y in 0 until h) {
-                          var any = false
-                          for (x in 0 until w) if (mask[y * w + x]) { any = true; break }
-                          if (!any) continue
-                          val lc = edge(bmp, l, -1, t + y, bg)
-                          val rc = edge(bmp, r - 1, 1, t + y, bg)
-                          for (x in 0 until w) {
-                              if (!mask[y * w + x]) continue
-                              val f = x / maxOf(1, w - 1).toFloat()
-                              val red = (Color.red(lc) + (Color.red(rc) - Color.red(lc)) * f).toInt()
-                              val green = (Color.green(lc) + (Color.green(rc) - Color.green(lc)) * f).toInt()
-                              val blue = (Color.blue(lc) + (Color.blue(rc) - Color.blue(lc)) * f).toInt()
-                              out[y * w + x] = Color.rgb(red, green, blue)
+                      if (uniform) {
+                          for (i in 0 until w * h) if (mask[i]) out[i] = bg
+                      } else {
+                          // inpainting: پیکسێلی نەزانراو لە لێوارەوە بۆ ناوەڕاست بە تێکڕای دراوسێکانی پڕدەکرێتەوە
+                          val known = BooleanArray(w * h) { !mask[it] }
+                          var unknown = 0
+                          for (i in 0 until w * h) if (mask[i]) unknown++
+                          var pass = 0
+                          val idxBuf = IntArray(w * h)
+                          val colBuf = IntArray(w * h)
+                          while (unknown > 0 && pass < 80) {
+                              var cnt = 0
+                              for (y in 0 until h) for (x in 0 until w) {
+                                  val p = y * w + x
+                                  if (known[p]) continue
+                                  var sr = 0; var sg = 0; var sb = 0; var n = 0
+                                  for (dy in -1..1) for (dx in -1..1) {
+                                      if (dx == 0 && dy == 0) continue
+                                      val xx = x + dx
+                                      val yy = y + dy
+                                      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue
+                                      val q = yy * w + xx
+                                      if (!known[q]) continue
+                                      val c = out[q]
+                                      sr += Color.red(c); sg += Color.green(c); sb += Color.blue(c); n++
+                                  }
+                                  if (n > 0) {
+                                      idxBuf[cnt] = p
+                                      colBuf[cnt] = Color.rgb(sr / n, sg / n, sb / n)
+                                      cnt++
+                                  }
+                              }
+                              if (cnt == 0) break
+                              for (k in 0 until cnt) { out[idxBuf[k]] = colBuf[k]; known[idxBuf[k]] = true }
+                              unknown -= cnt
+                              pass++
+                          }
+                          if (unknown > 0) for (i in 0 until w * h) if (!known[i]) out[i] = bg
+                          // نەرمکردنی ناوچە پڕکراوەکان بۆ ئەوەی بلۆک نەبینرێت
+                          for (iter in 0 until 2) {
+                              val cp = out.copyOf()
+                              for (y in 0 until h) for (x in 0 until w) {
+                                  val p = y * w + x
+                                  if (!mask[p]) continue
+                                  var sr = 0; var sg = 0; var sb = 0; var n = 0
+                                  for (dy in -1..1) for (dx in -1..1) {
+                                      val xx = x + dx
+                                      val yy = y + dy
+                                      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue
+                                      val c = cp[yy * w + xx]
+                                      sr += Color.red(c); sg += Color.green(c); sb += Color.blue(c); n++
+                                  }
+                                  out[p] = Color.rgb(sr / n, sg / n, sb / n)
+                              }
                           }
                       }
+                      for (i in out.indices) out[i] = out[i] or (0xFF shl 24)
                       FillResult(Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888), Rect(l, t, r, b))
                   } catch (ex: Throwable) {
                       null
                   }
+              }
+          }
+
+          /**
+           * ئەو بلۆکە نزیکانە یەک دەکاتەوە کە ML Kit بە هەڵە دابەشی کردوون (هەمان بالۆن).
+           * ئەمە ڕێگری دەکات لەوەی ڕیزی یەکەمی ئینگلیزی (وەک "WHAT MORE DO") بێ سڕینەوە بمێنێتەوە.
+           */
+          object Merge {
+              class Item(val text: String, val box: Rect)
+
+              private fun near(a: Rect, b: Rect): Boolean {
+                  val lineH = minOf(a.height(), b.height()).coerceAtLeast(8)
+                  val vGap = maxOf(a.top, b.top) - minOf(a.bottom, b.bottom)
+                  val hOverlap = minOf(a.right, b.right) - maxOf(a.left, b.left)
+                  val minW = minOf(a.width(), b.width()).coerceAtLeast(1)
+                  return vGap < lineH * 0.7f && hOverlap > minW * 0.3f
+              }
+
+              fun run(items: List<Item>): List<Item> {
+                  val list = items.sortedBy { it.box.top }.toMutableList()
+                  var changed = true
+                  while (changed) {
+                      changed = false
+                      outer@ for (i in 0 until list.size) {
+                          for (j in i + 1 until list.size) {
+                              val a = list[i]
+                              val b = list[j]
+                              if (!near(a.box, b.box)) continue
+                              val first = if (a.box.top <= b.box.top) a else b
+                              val second = if (first === a) b else a
+                              val box = Rect(
+                                  minOf(a.box.left, b.box.left), minOf(a.box.top, b.box.top),
+                                  maxOf(a.box.right, b.box.right), maxOf(a.box.bottom, b.box.bottom)
+                              )
+                              list[i] = Item(first.text + " " + second.text, box)
+                              list.removeAt(j)
+                              changed = true
+                              break@outer
+                          }
+                      }
+                  }
+                  return list
               }
           }
 
