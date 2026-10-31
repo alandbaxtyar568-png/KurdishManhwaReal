@@ -1,1 +1,2101 @@
-name: Build User APK  on:   workflow_dispatch:   push:     branches: [ main, master ]  jobs:   build:     runs-on: ubuntu-latest     steps:       - uses: actions/checkout@v4        - uses: actions/setup-java@v4         with:           distribution: temurin           java-version: '17'        - uses: gradle/actions/setup-gradle@v3         with:           gradle-version: '8.9'        - name: Create project files         run: |           mkdir -p $(dirname settings.gradle)           cat > settings.gradle <<'KMEOF'           pluginManagement {               repositories {                   google()                   mavenCentral()                   gradlePluginPortal()               }           }           dependencyResolutionManagement {               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)               repositories {                   google()                   mavenCentral()               }           }           rootProject.name = "KurdishManhwaReal"           include ':app'           KMEOF           mkdir -p $(dirname build.gradle)           cat > build.gradle <<'KMEOF'           plugins {               id 'com.android.application' version '8.6.1' apply false               id 'org.jetbrains.kotlin.android' version '1.9.22' apply false           }           KMEOF           mkdir -p $(dirname gradle.properties)           cat > gradle.properties <<'KMEOF'           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8           android.useAndroidX=true           kotlin.code.style=official           KMEOF           mkdir -p $(dirname app/build.gradle)           cat > app/build.gradle <<'KMEOF'           plugins {               id 'com.android.application'               id 'org.jetbrains.kotlin.android'           }            android {               namespace 'com.kurdish.manhwareal'               compileSdk 35                buildFeatures {                   buildConfig true               }                signingConfigs {                   km {                       storeFile file("km.keystore")                       storePassword System.getenv("KM_STORE_PASS") ?: "kmpass123"                       keyAlias "km"                       keyPassword System.getenv("KM_STORE_PASS") ?: "kmpass123"                   }               }                buildTypes {                   debug {                       signingConfig signingConfigs.km                   }                   release {                       signingConfig signingConfigs.km                   }               }                flavorDimensions "role"               productFlavors {                   user {                       dimension "role"                       buildConfigField "boolean", "IS_ADMIN", "false"                       manifestPlaceholders = [appLabel: "Kurdish Manhwa Real"]                   }                   admin {                       dimension "role"                       applicationIdSuffix ".admin"                       buildConfigField "boolean", "IS_ADMIN", "true"                       manifestPlaceholders = [appLabel: "KMR Admin"]                   }               }                defaultConfig {                   applicationId "com.kurdish.manhwareal"                   minSdk 26                   targetSdk 35                   versionCode 1                   versionName "1.0"               }                compileOptions {                   sourceCompatibility JavaVersion.VERSION_17                   targetCompatibility JavaVersion.VERSION_17               }               kotlinOptions {                   jvmTarget = '17'               }           }            dependencies {               implementation 'androidx.core:core-ktx:1.12.0'               implementation 'androidx.appcompat:appcompat:1.6.1'               implementation 'com.google.android.material:material:1.11.0'               implementation 'androidx.recyclerview:recyclerview:1.3.2'                // ML Kit - Latin text recognition (English)               implementation 'com.google.mlkit:text-recognition:16.0.0'                // Google Sign-In (Credential Manager)               implementation 'androidx.credentials:credentials:1.3.0'               implementation 'androidx.credentials:credentials-play-services-auth:1.3.0'               implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'           }           KMEOF           mkdir -p $(dirname app/src/main/AndroidManifest.xml)           cat > app/src/main/AndroidManifest.xml <<'KMEOF'           <?xml version="1.0" encoding="utf-8"?>           <manifest xmlns:android="http://schemas.android.com/apk/res/android">                <uses-permission android:name="android.permission.INTERNET" />               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />               <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />                <application                   android:allowBackup="true"                   android:largeHeap="true"                   android:icon="@mipmap/ic_launcher"                   android:roundIcon="@mipmap/ic_launcher_round"                   android:label="${appLabel}"                   android:supportsRtl="true"                   android:usesCleartextTraffic="true"                   android:theme="@style/Theme.AppCompat.NoActionBar">                    <activity                       android:name=".MainActivity"                       android:exported="true"                       android:windowSoftInputMode="adjustResize">                       <intent-filter>                           <action android:name="android.intent.action.MAIN" />                           <category android:name="android.intent.category.LAUNCHER" />                       </intent-filter>                   </activity>                    <service                       android:name=".KurdishRealTimeTranslatorService"                       android:enabled="true"                       android:exported="false"                       android:foregroundServiceType="mediaProjection" />               </application>            </manifest>           KMEOF           mkdir -p $(dirname app/src/main/res/values/ic_launcher_background.xml)           cat > app/src/main/res/values/ic_launcher_background.xml <<'KMEOF'           <?xml version="1.0" encoding="utf-8"?>           <resources>               <color name="ic_launcher_background">#0B0F1A</color>           </resources>           KMEOF           mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml)           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'KMEOF'           <?xml version="1.0" encoding="utf-8"?>           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">               <background android:drawable="@color/ic_launcher_background" />               <foreground android:drawable="@drawable/ic_launcher_foreground" />           </adaptive-icon>           KMEOF           mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml)           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'KMEOF'           <?xml version="1.0" encoding="utf-8"?>           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">               <background android:drawable="@color/ic_launcher_background" />               <foreground android:drawable="@drawable/ic_launcher_foreground" />           </adaptive-icon>           KMEOF           mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Secrets.kt)           cat > app/src/main/java/com/kurdish/manhwareal/Secrets.kt <<'KMEOF'           package com.kurdish.manhwareal            object Secrets {               // ناونیشانی Worker (کلیلەکان تەنها لەوێن، نەک لە ئەپەکە)               const val PROXY = "https://yellow-limit-446a.alandbaxtyar568.workers.dev"                // Web client ID ی Google Cloud (لە workflow ەوە دادەنرێت، نهێنی نییە)               const val GOOGLE_CLIENT_ID = "603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com"     
+name: Build User APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.9'
+
+      - name: Create project files
+        run: |
+          mkdir -p $(dirname settings.gradle)
+          cat > settings.gradle <<'KMEOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "KurdishManhwaReal"
+          include ':app'
+          KMEOF
+          mkdir -p $(dirname build.gradle)
+          cat > build.gradle <<'KMEOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+          }
+          KMEOF
+          mkdir -p $(dirname gradle.properties)
+          cat > gradle.properties <<'KMEOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          KMEOF
+          mkdir -p $(dirname app/build.gradle)
+          cat > app/build.gradle <<'KMEOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.kurdish.manhwareal'
+              compileSdk 35
+
+              buildFeatures {
+                  buildConfig true
+              }
+
+              signingConfigs {
+                  km {
+                      storeFile file("km.keystore")
+                      storePassword System.getenv("KM_STORE_PASS") ?: "kmpass123"
+                      keyAlias "km"
+                      keyPassword System.getenv("KM_STORE_PASS") ?: "kmpass123"
+                  }
+              }
+
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.km
+                  }
+                  release {
+                      signingConfig signingConfigs.km
+                  }
+              }
+
+              flavorDimensions "role"
+              productFlavors {
+                  user {
+                      dimension "role"
+                      buildConfigField "boolean", "IS_ADMIN", "false"
+                      manifestPlaceholders = [appLabel: "Kurdish Manhwa Real"]
+                  }
+                  admin {
+                      dimension "role"
+                      applicationIdSuffix ".admin"
+                      buildConfigField "boolean", "IS_ADMIN", "true"
+                      manifestPlaceholders = [appLabel: "KMR Admin"]
+                  }
+              }
+
+              defaultConfig {
+                  applicationId "com.kurdish.manhwareal"
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+              implementation 'androidx.recyclerview:recyclerview:1.3.2'
+
+              // ML Kit - Latin text recognition (English)
+              implementation 'com.google.mlkit:text-recognition:16.0.0'
+
+              // Google Sign-In (Credential Manager)
+              implementation 'androidx.credentials:credentials:1.3.0'
+              implementation 'androidx.credentials:credentials-play-services-auth:1.3.0'
+              implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/AndroidManifest.xml)
+          cat > app/src/main/AndroidManifest.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:largeHeap="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:label="${appLabel}"
+                  android:supportsRtl="true"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".KurdishRealTimeTranslatorService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="mediaProjection" />
+              </application>
+
+          </manifest>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/values/ic_launcher_background.xml)
+          cat > app/src/main/res/values/ic_launcher_background.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#0B0F1A</color>
+          </resources>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml)
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          KMEOF
+          mkdir -p $(dirname app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml)
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'KMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Secrets.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/Secrets.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          object Secrets {
+              // ناونیشانی Worker (کلیلەکان تەنها لەوێن، نەک لە ئەپەکە)
+              const val PROXY = "https://yellow-limit-446a.alandbaxtyar568.workers.dev"
+
+              // Web client ID ی Google Cloud (لە workflow ەوە دادەنرێت، نهێنی نییە)
+              const val GOOGLE_CLIENT_ID = "603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com"
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Data.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/Data.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.content.Context
+          import android.content.SharedPreferences
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.os.Handler
+          import android.os.Looper
+          import android.text.Html
+          import android.util.LruCache
+          import android.widget.ImageView
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.util.concurrent.Callable
+          import java.util.concurrent.ExecutorService
+          import java.util.concurrent.Executors
+
+          private fun JSONObject.str(name: String): String = if (isNull(name)) "" else optString(name, "")
+
+          private fun JSONArray?.strings(): List<String> {
+              val out = ArrayList<String>()
+              if (this != null) {
+                  for (i in 0 until this.length()) out.add(this.optString(i, ""))
+              }
+              return out
+          }
+
+          data class Manhwa(
+              val id: Int,
+              val title: String,
+              val altTitle: String,
+              val cover: String,
+              val score: Int,
+              val popularity: Int,
+              val genres: List<String>,
+              val tags: List<String>,
+              val description: String,
+              val chapters: Int,
+              val status: String,
+              val year: Int,
+              val url: String,
+              var reason: String = ""
+          ) {
+              fun toJson(): JSONObject {
+                  val o = JSONObject()
+                  o.put("id", id)
+                  o.put("title", title)
+                  o.put("alt", altTitle)
+                  o.put("cover", cover)
+                  o.put("score", score)
+                  o.put("pop", popularity)
+                  o.put("genres", JSONArray(genres))
+                  o.put("tags", JSONArray(tags))
+                  o.put("desc", description)
+                  o.put("ch", chapters)
+                  o.put("status", status)
+                  o.put("year", year)
+                  o.put("url", url)
+                  return o
+              }
+
+              companion object {
+                  fun fromJson(o: JSONObject): Manhwa = Manhwa(
+                      id = o.optInt("id"),
+                      title = o.str("title"),
+                      altTitle = o.str("alt"),
+                      cover = o.str("cover"),
+                      score = o.optInt("score"),
+                      popularity = o.optInt("pop"),
+                      genres = o.optJSONArray("genres").strings(),
+                      tags = o.optJSONArray("tags").strings(),
+                      description = o.str("desc"),
+                      chapters = o.optInt("ch"),
+                      status = o.str("status"),
+                      year = o.optInt("year"),
+                      url = o.str("url")
+                  )
+              }
+          }
+
+          /** پاشەکەوتکردنی دڵخوازەکان، شاردراوەکان و تامی بەکارهێنەر */
+          object Store {
+              private var sp: SharedPreferences? = null
+              private var savedCache: MutableList<Manhwa>? = null
+              private var tasteCache: MutableMap<String, Double>? = null
+
+              fun init(ctx: Context) {
+                  if (sp == null) sp = ctx.applicationContext.getSharedPreferences("kmr_prefs", Context.MODE_PRIVATE)
+              }
+
+              private fun p(): SharedPreferences = sp!!
+
+              var apiKey: String
+                  get() = p().getString("gemini_key", "") ?: ""
+                  set(v) { p().edit().putString("gemini_key", v.trim()).apply() }
+
+              var model: String
+                  get() = p().getString("gemini_model", "gemini-flash-latest") ?: "gemini-flash-latest"
+                  set(v) { p().edit().putString("gemini_model", v.trim().ifEmpty { "gemini-flash-latest" }).apply() }
+
+              fun saved(): MutableList<Manhwa> {
+                  savedCache?.let { return it }
+                  val list = ArrayList<Manhwa>()
+                  try {
+                      val arr = JSONArray(p().getString("saved", "[]"))
+                      for (i in 0 until arr.length()) list.add(Manhwa.fromJson(arr.getJSONObject(i)))
+                  } catch (_: Exception) { }
+                  savedCache = list
+                  return list
+              }
+
+              private fun writeSaved(list: List<Manhwa>) {
+                  val arr = JSONArray()
+                  for (m in list) arr.put(m.toJson())
+                  p().edit().putString("saved", arr.toString()).apply()
+              }
+
+              fun isSaved(id: Int): Boolean = saved().any { it.id == id }
+
+              /** true = زیادکرا، false = لابرا */
+              fun toggleSave(m: Manhwa): Boolean {
+                  val list = saved()
+                  val idx = list.indexOfFirst { it.id == m.id }
+                  return if (idx >= 0) {
+                      list.removeAt(idx)
+                      writeSaved(list)
+                      addTaste(m, -1.0)
+                      false
+                  } else {
+                      list.add(0, m)
+                      writeSaved(list)
+                      addTaste(m, 1.0)
+                      true
+                  }
+              }
+
+              fun hiddenIds(): Set<Int> {
+                  val s = p().getStringSet("hid_ids", emptySet()) ?: emptySet()
+                  return s.mapNotNull { it.toIntOrNull() }.toSet()
+              }
+
+              fun hiddenTitles(): List<String> {
+                  val s = p().getStringSet("hid_titles", emptySet()) ?: emptySet()
+                  return s.toList().takeLast(15)
+              }
+
+              fun hide(m: Manhwa) {
+                  val ids = HashSet<String>(p().getStringSet("hid_ids", emptySet()) ?: emptySet())
+                  ids.add(m.id.toString())
+                  val titles = HashSet<String>(p().getStringSet("hid_titles", emptySet()) ?: emptySet())
+                  titles.add(m.title)
+                  p().edit().putStringSet("hid_ids", ids).putStringSet("hid_titles", titles).apply()
+                  addTaste(m, -1.0)
+              }
+
+              private fun tasteMap(): MutableMap<String, Double> {
+                  tasteCache?.let { return it }
+                  val map = HashMap<String, Double>()
+                  try {
+                      val o = JSONObject(p().getString("taste", "{}"))
+                      val keys = o.keys()
+                      while (keys.hasNext()) {
+                          val k = keys.next()
+                          map[k] = o.optDouble(k, 0.0)
+                      }
+                  } catch (_: Exception) { }
+                  tasteCache = map
+                  return map
+              }
+
+              private fun addTaste(m: Manhwa, d: Double) {
+                  val t = tasteMap()
+                  for (g in m.genres) t[g] = (t[g] ?: 0.0) + d
+                  for (g in m.tags.take(8)) t["#" + g] = (t["#" + g] ?: 0.0) + d * 0.5
+                  val o = JSONObject()
+                  for ((k, v) in t) o.put(k, v)
+                  p().edit().putString("taste", o.toString()).apply()
+              }
+
+              fun affinity(m: Manhwa): Double {
+                  val t = tasteMap()
+                  var s = 0.0
+                  for (g in m.genres) s += (t[g] ?: 0.0)
+                  for (g in m.tags) s += 0.5 * (t["#" + g] ?: 0.0)
+                  return s
+              }
+
+              fun affinityNorm(m: Manhwa): Double = affinity(m) / maxOf(1.0, m.genres.size + 0.5 * m.tags.size)
+
+              fun hasTaste(): Boolean = tasteMap().values.any { it > 0.5 }
+
+              fun topTasteGenres(n: Int): List<String> =
+                  tasteMap().entries
+                      .filter { !it.key.startsWith("#") && it.value > 0.5 }
+                      .sortedByDescending { it.value }
+                      .take(n)
+                      .map { it.key }
+          }
+
+          /** تۆڕ: AniList، Gemini، وەرگێڕان، وێنەکان */
+          object Net {
+              val io: ExecutorService = Executors.newFixedThreadPool(6)
+              val ui = Handler(Looper.getMainLooper())
+
+              private val cache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
+                  override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+              }
+
+              private const val FIELDS =
+                  "id title{romaji english native} coverImage{large} averageScore popularity genres tags{name rank} " +
+                      "description(asHtml:false) chapters status startDate{year} siteUrl countryOfOrigin isAdult"
+
+              // @ دەگۆڕدرێت بە $ (بۆ ڕێگری لە تێکچوونی Kotlin string)
+              private val Q_PAGE = (
+                  "query(@page:Int,@perPage:Int,@sort:[MediaSort],@genres:[String],@search:String,@status:MediaStatus,@minScore:Int,@minPop:Int){" +
+                      "Page(page:@page,perPage:@perPage){media(type:MANGA,countryOfOrigin:\"KR\",isAdult:false,sort:@sort,genre_in:@genres," +
+                      "search:@search,status:@status,averageScore_greater:@minScore,popularity_greater:@minPop){" + FIELDS + "}}}"
+                  ).replace('@', '$')
+
+              private val Q_SIMILAR = (
+                  "query(@id:Int){Media(id:@id){recommendations(sort:RATING_DESC,perPage:20){nodes{mediaRecommendation{" + FIELDS + "}}}}}"
+                  ).replace('@', '$')
+
+              fun <T> async(work: () -> T, ok: (T) -> Unit, fail: (String) -> Unit = {}) {
+                  io.execute {
+                      try {
+                          val r = work()
+                          ui.post { ok(r) }
+                      } catch (e: Exception) {
+                          val msg = e.message ?: "هەڵە"
+                          ui.post { fail(msg) }
+                      }
+                  }
+              }
+
+              fun httpPost(url: String, body: String, headers: Map<String, String>): String {
+                  val conn = URL(url).openConnection() as HttpURLConnection
+                  try {
+                      conn.requestMethod = "POST"
+                      conn.connectTimeout = 8000
+                      conn.readTimeout = 25000
+                      conn.doOutput = true
+                      for ((k, v) in headers) conn.setRequestProperty(k, v)
+                      conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                      val code = conn.responseCode
+                      val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                      val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                      if (code !in 200..299) throw Exception("HTTP " + code + ": " + text.take(160))
+                      return text
+                  } finally {
+                      conn.disconnect()
+                  }
+              }
+
+              /** داواکاری بە تۆکنی چوونەژوورەوە. ئەگەر تۆکن بەسەرچووبێت یەکجار نوێی دەکاتەوە */
+              fun authedPost(url: String, body: String): String {
+                  var last: Exception? = null
+                  for (attempt in 0..1) {
+                      val tok = Auth.ensure()
+                      try {
+                          val hdr = HashMap<String, String>()
+                          hdr["Content-Type"] = "application/json"
+                          hdr["Authorization"] = "Bearer " + tok
+                          if (Quota.ticket.isNotEmpty()) hdr["X-Chapter"] = Quota.ticket
+                          return httpPost(url, body, hdr)
+                      } catch (e: Exception) {
+                          val m = e.message ?: ""
+                          if (m.contains("HTTP 401")) {
+                              Auth.expire()
+                              last = e
+                              continue
+                          }
+                          if (m.contains("HTTP 402")) Quota.ticket = ""
+                          if (m.contains("HTTP 403") && m.contains("banned")) {
+                              Auth.signOut()
+                          }
+                          throw e
+                      }
+                  }
+                  throw last ?: Exception("LOGIN_REQUIRED")
+              }
+
+              /** هەموو داواکارییەکانی Gemini بە Worker دا دەڕۆن (کلیل لە ئەپەکەدا نییە) */
+              fun callGemini(body: String): String = authedPost(Secrets.PROXY, body)
+
+              private fun gql(query: String, vars: JSONObject): JSONObject {
+                  val body = JSONObject().put("query", query).put("variables", vars).toString()
+                  val resp = httpPost(
+                      "https://graphql.anilist.co", body,
+                      mapOf("Content-Type" to "application/json", "Accept" to "application/json")
+                  )
+                  val root = JSONObject(resp)
+                  if (root.isNull("data")) {
+                      val errs = root.optJSONArray("errors")
+                      val msg = errs?.optJSONObject(0)?.optString("message") ?: "AniList هەڵە"
+                      throw Exception(msg)
+                  }
+                  return root.getJSONObject("data")
+              }
+
+              private fun parse(o: JSONObject): Manhwa? {
+                  val country = o.str("countryOfOrigin")
+                  if (country.isNotEmpty() && country != "KR") return null
+                  if (o.optBoolean("isAdult", false)) return null
+                  val t = o.optJSONObject("title") ?: return null
+                  val en = t.str("english")
+                  val ro = t.str("romaji")
+                  val title = if (en.isNotBlank()) en else ro
+                  if (title.isBlank()) return null
+                  val alt = if (ro.isNotBlank() && ro != title) ro else t.str("native")
+                  val cover = o.optJSONObject("coverImage")?.str("large") ?: ""
+                  val tags = ArrayList<String>()
+                  val tagArr = o.optJSONArray("tags")
+                  if (tagArr != null) {
+                      for (i in 0 until tagArr.length()) {
+                          val tg = tagArr.optJSONObject(i) ?: continue
+                          if (tg.optInt("rank") >= 50) tags.add(tg.str("name"))
+                      }
+                  }
+                  val rawDesc = o.str("description")
+                  val desc = if (rawDesc.isBlank()) "" else Html.fromHtml(rawDesc, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                  return Manhwa(
+                      id = o.optInt("id"),
+                      title = title,
+                      altTitle = alt,
+                      cover = cover,
+                      score = o.optInt("averageScore"),
+                      popularity = o.optInt("popularity"),
+                      genres = o.optJSONArray("genres").strings(),
+                      tags = tags,
+                      description = desc,
+                      chapters = o.optInt("chapters"),
+                      status = o.str("status"),
+                      year = o.optJSONObject("startDate")?.optInt("year") ?: 0,
+                      url = o.str("siteUrl")
+                  )
+              }
+
+              fun discover(
+                  sort: String, genres: List<String>, search: String, status: String,
+                  page: Int, perPage: Int, minScore: Int, minPop: Int
+              ): List<Manhwa> {
+                  val v = JSONObject()
+                  v.put("page", page)
+                  v.put("perPage", perPage)
+                  v.put("sort", JSONArray().put(sort))
+                  if (genres.isNotEmpty()) v.put("genres", JSONArray(genres))
+                  if (search.isNotBlank()) v.put("search", search)
+                  if (status.isNotBlank()) v.put("status", status)
+                  if (minScore > 0) v.put("minScore", minScore)
+                  if (minPop > 0) v.put("minPop", minPop)
+                  val media = gql(Q_PAGE, v).getJSONObject("Page").getJSONArray("media")
+                  val out = ArrayList<Manhwa>()
+                  for (i in 0 until media.length()) {
+                      val m = parse(media.getJSONObject(i)) ?: continue
+                      out.add(m)
+                  }
+                  return out
+              }
+
+              fun findByTitle(title: String): Manhwa? =
+                  discover("SEARCH_MATCH", emptyList(), title, "", 1, 3, 0, 0).firstOrNull()
+
+              fun similar(id: Int): List<Manhwa> {
+                  val v = JSONObject().put("id", id)
+                  val nodes = gql(Q_SIMILAR, v).getJSONObject("Media").getJSONObject("recommendations").getJSONArray("nodes")
+                  val out = ArrayList<Manhwa>()
+                  for (i in 0 until nodes.length()) {
+                      val n = nodes.optJSONObject(i) ?: continue
+                      val mr = n.optJSONObject("mediaRecommendation") ?: continue
+                      val m = parse(mr) ?: continue
+                      out.add(m)
+                  }
+                  return out
+              }
+
+              /** AI: Gemini پێشنیار دەکات، پاشان لە AniList دەیاندۆزینەوە */
+              fun recommend(request: String): List<Manhwa> {
+                  val liked = Store.saved().take(12).map { it.title }
+                  val avoid = Store.hiddenTitles()
+                  val prompt = "You are an expert on Korean manhwa and webtoons. The user describes what they want to read " +
+                      "(the request may be in Kurdish, Arabic, English or any other language). " +
+                      "Recommend 8 real, well-regarded manhwa that fit best, best match first. " +
+                      "Use the exact English or romanized title as listed on AniList.\n" +
+                      "User request: \"" + request + "\"\n" +
+                      "Titles the user already likes (match this taste): " + liked.joinToString("; ") + "\n" +
+                      "Titles to avoid: " + avoid.joinToString("; ") + "\n" +
+                      "Return ONLY a JSON array, no other text: " +
+                      "[{\"title\":\"...\",\"reason\":\"one short sentence in Kurdish Sorani (Arabic script) on why it fits\"}]"
+
+                  val part = JSONObject().put("text", prompt)
+                  val content = JSONObject().put("parts", JSONArray().put(part))
+                  val body = JSONObject()
+                      .put("contents", JSONArray().put(content))
+                      .put("generationConfig", JSONObject().put("temperature", 0.8).put("responseMimeType", "application/json"))
+
+                  val resp = callGemini(body.toString())
+                  val text = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
+                      .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                  val startIdx = text.indexOf('[')
+                  val endIdx = text.lastIndexOf(']')
+                  if (startIdx < 0 || endIdx <= startIdx) throw Exception("وەڵامی AI تێنەگەیشتم")
+                  val arr = JSONArray(text.substring(startIdx, endIdx + 1))
+
+                  val wanted = ArrayList<Pair<String, String>>()
+                  for (i in 0 until arr.length()) {
+                      val o = arr.optJSONObject(i) ?: continue
+                      val t = o.str("title")
+                      if (t.isNotBlank()) wanted.add(Pair(t, o.str("reason")))
+                  }
+
+                  val futures = wanted.map { w ->
+                      io.submit(Callable<Manhwa?> {
+                          try { findByTitle(w.first) } catch (ex: Exception) { null }
+                      })
+                  }
+                  val out = ArrayList<Manhwa>()
+                  val seen = HashSet<Int>()
+                  for ((i, f) in futures.withIndex()) {
+                      val m: Manhwa? = try { f.get() } catch (ex: Exception) { null }
+                      if (m != null && seen.add(m.id)) {
+                          m.reason = wanted[i].second
+                          out.add(m)
+                      }
+                  }
+                  return out
+              }
+
+              private fun translateChunk(text: String): String {
+                  val urlString = "https://translate.googleapis.com/translate_a/single" +
+                      "?client=gtx&sl=en&tl=ckb&dt=t&q=" + URLEncoder.encode(text, "UTF-8")
+                  val conn = URL(urlString).openConnection() as HttpURLConnection
+                  conn.connectTimeout = 6000
+                  conn.readTimeout = 8000
+                  conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                  val response = conn.inputStream.bufferedReader().use { it.readText() }
+                  val sub = JSONArray(response).getJSONArray(0)
+                  val sb = StringBuilder()
+                  for (i in 0 until sub.length()) sb.append(sub.getJSONArray(i).optString(0, ""))
+                  return sb.toString().trim()
+              }
+
+              /** وەرگێڕانی دەقی درێژ بۆ کوردی سۆرانی (پارچە پارچە) */
+              fun translateKu(text: String): String {
+                  val parts = ArrayList<String>()
+                  var cur = StringBuilder()
+                  for (s in text.split(Regex("(?<=[.!?])\\s+"))) {
+                      if (cur.isNotEmpty() && cur.length + s.length > 450) {
+                          parts.add(cur.toString())
+                          cur = StringBuilder()
+                      }
+                      cur.append(s).append(' ')
+                  }
+                  if (cur.isNotBlank()) parts.add(cur.toString())
+                  val futures = parts.map { c -> io.submit(Callable<String> { translateChunk(c) }) }
+                  return futures.joinToString(" ") { it.get() }
+              }
+
+              fun loadImage(url: String, iv: ImageView) {
+                  iv.tag = url
+                  if (url.isBlank()) {
+                      iv.setImageDrawable(null)
+                      return
+                  }
+                  val c = cache.get(url)
+                  if (c != null) {
+                      iv.setImageBitmap(c)
+                      return
+                  }
+                  iv.setImageDrawable(null)
+                  io.execute {
+                      try {
+                          val conn = URL(url).openConnection() as HttpURLConnection
+                          conn.connectTimeout = 8000
+                          conn.readTimeout = 8000
+                          val bmp = conn.inputStream.use { BitmapFactory.decodeStream(it) }
+                          if (bmp != null) {
+                              cache.put(url, bmp)
+                              ui.post { if (iv.tag == url) iv.setImageBitmap(bmp) }
+                          }
+                      } catch (_: Exception) { }
+                  }
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Ui.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/Ui.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.content.Context
+          import android.graphics.Color
+          import android.graphics.Outline
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.ViewOutlineProvider
+          import android.widget.EditText
+          import android.widget.FrameLayout
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.recyclerview.widget.RecyclerView
+
+          object Ui {
+              val BG = 0xFF0B0F1A.toInt()
+              val SURFACE = 0xFF141B2D.toInt()
+              val SURFACE2 = 0xFF1C2540.toInt()
+              val ACCENT = 0xFF7C5CFF.toInt()
+              val ACCENT2 = 0xFF22D3EE.toInt()
+              val TEXT = 0xFFE8ECF8.toInt()
+              val MUTED = 0xFF8A94B2.toInt()
+              val HEART = 0xFFFB7185.toInt()
+
+              fun dp(c: Context, v: Int): Int = (v * c.resources.displayMetrics.density).toInt()
+
+              fun round(c: Context, color: Int, radiusDp: Int): GradientDrawable {
+                  val g = GradientDrawable()
+                  g.setColor(color)
+                  g.cornerRadius = dp(c, radiusDp).toFloat()
+                  return g
+              }
+
+              fun grad(c: Context, a: Int, b: Int, radiusDp: Int): GradientDrawable {
+                  val g = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(a, b))
+                  g.cornerRadius = dp(c, radiusDp).toFloat()
+                  return g
+              }
+
+              fun clipRound(v: View, radiusDp: Int) {
+                  val r = dp(v.context, radiusDp).toFloat()
+                  v.clipToOutline = true
+                  v.outlineProvider = object : ViewOutlineProvider() {
+                      override fun getOutline(view: View, outline: Outline) {
+                          outline.setRoundRect(0, 0, view.width, view.height, r)
+                      }
+                  }
+              }
+
+              fun tv(c: Context, text: String, sp: Float, color: Int, bold: Boolean = false): TextView {
+                  val t = TextView(c)
+                  t.text = text
+                  t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+                  t.setTextColor(color)
+                  if (bold) t.typeface = Typeface.DEFAULT_BOLD
+                  return t
+              }
+
+              fun button(c: Context, text: String, filled: Boolean, onClick: (() -> Unit)? = null): TextView {
+                  val b = tv(c, text, 14f, if (filled) Color.WHITE else TEXT, true)
+                  b.gravity = Gravity.CENTER
+                  b.setPadding(dp(c, 16), dp(c, 10), dp(c, 16), dp(c, 10))
+                  b.background = if (filled) grad(c, ACCENT, ACCENT2, 14) else round(c, SURFACE2, 14)
+                  if (onClick != null) b.setOnClickListener { onClick() }
+                  return b
+              }
+
+              fun edit(c: Context, hint: String): EditText {
+                  val e = EditText(c)
+                  e.hint = hint
+                  e.setHintTextColor(MUTED)
+                  e.setTextColor(TEXT)
+                  e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                  e.background = round(c, SURFACE2, 14)
+                  e.setPadding(dp(c, 14), dp(c, 12), dp(c, 14), dp(c, 12))
+                  return e
+              }
+
+              fun statusKu(s: String): String = when (s) {
+                  "RELEASING" -> "بەردەوامە"
+                  "FINISHED" -> "تەواوبووە"
+                  "HIATUS" -> "وەستاوە"
+                  "CANCELLED" -> "هەڵوەشاوەتەوە"
+                  "NOT_YET_RELEASED" -> "هێشتا نەهاتووە"
+                  else -> ""
+              }
+          }
+
+          class CardAdapter(
+              private val ctx: Context,
+              val items: MutableList<Manhwa>,
+              private val showHide: Boolean,
+              private val onOpen: (Manhwa) -> Unit,
+              private val onHeart: (Manhwa) -> Unit,
+              private val onHide: (Manhwa) -> Unit
+          ) : RecyclerView.Adapter<CardAdapter.VH>() {
+
+              class VH(
+                  v: View,
+                  val cover: ImageView,
+                  val title: TextView,
+                  val meta: TextView,
+                  val reason: TextView,
+                  val score: TextView,
+                  val heart: TextView,
+                  val hide: TextView
+              ) : RecyclerView.ViewHolder(v)
+
+              override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+                  val card = LinearLayout(ctx)
+                  card.orientation = LinearLayout.VERTICAL
+                  card.background = Ui.round(ctx, Ui.SURFACE, 16)
+                  Ui.clipRound(card, 16)
+                  val lp = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                  val m = Ui.dp(ctx, 6)
+                  lp.setMargins(m, m, m, m)
+                  card.layoutParams = lp
+
+                  val frame = FrameLayout(ctx)
+                  val cover = ImageView(ctx)
+                  cover.scaleType = ImageView.ScaleType.CENTER_CROP
+                  cover.setBackgroundColor(Ui.SURFACE2)
+                  frame.addView(cover, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 230)))
+
+                  val score = Ui.tv(ctx, "", 12f, Color.WHITE, true)
+                  score.background = Ui.round(ctx, 0xCC000000.toInt(), 10)
+                  score.setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 3), Ui.dp(ctx, 8), Ui.dp(ctx, 3))
+                  val slp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START)
+                  slp.setMargins(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
+                  frame.addView(score, slp)
+
+                  val heart = Ui.tv(ctx, "♡", 18f, Color.WHITE, true)
+                  heart.gravity = Gravity.CENTER
+                  heart.background = Ui.round(ctx, 0xCC000000.toInt(), 18)
+                  val hlp = FrameLayout.LayoutParams(Ui.dp(ctx, 36), Ui.dp(ctx, 36), Gravity.TOP or Gravity.END)
+                  hlp.setMargins(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
+                  frame.addView(heart, hlp)
+
+                  val hide = Ui.tv(ctx, "✕", 14f, Color.WHITE, true)
+                  hide.gravity = Gravity.CENTER
+                  hide.background = Ui.round(ctx, 0xCC000000.toInt(), 16)
+                  val xlp = FrameLayout.LayoutParams(Ui.dp(ctx, 32), Ui.dp(ctx, 32), Gravity.BOTTOM or Gravity.END)
+                  xlp.setMargins(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
+                  frame.addView(hide, xlp)
+                  hide.visibility = if (showHide) View.VISIBLE else View.GONE
+
+                  card.addView(frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+                  val info = LinearLayout(ctx)
+                  info.orientation = LinearLayout.VERTICAL
+                  info.setPadding(Ui.dp(ctx, 10), Ui.dp(ctx, 8), Ui.dp(ctx, 10), Ui.dp(ctx, 10))
+                  val title = Ui.tv(ctx, "", 14f, Ui.TEXT, true)
+                  title.maxLines = 2
+                  val meta = Ui.tv(ctx, "", 11f, Ui.MUTED)
+                  meta.maxLines = 1
+                  val reason = Ui.tv(ctx, "", 11f, Ui.ACCENT2)
+                  reason.maxLines = 4
+                  reason.setPadding(0, Ui.dp(ctx, 4), 0, 0)
+                  info.addView(title)
+                  info.addView(meta)
+                  info.addView(reason)
+                  card.addView(info, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+                  val vh = VH(card, cover, title, meta, reason, score, heart, hide)
+                  card.setOnClickListener {
+                      val p = vh.bindingAdapterPosition
+                      if (p != RecyclerView.NO_POSITION) onOpen(items[p])
+                  }
+                  heart.setOnClickListener {
+                      val p = vh.bindingAdapterPosition
+                      if (p != RecyclerView.NO_POSITION) onHeart(items[p])
+                  }
+                  hide.setOnClickListener {
+                      val p = vh.bindingAdapterPosition
+                      if (p != RecyclerView.NO_POSITION) onHide(items[p])
+                  }
+                  return vh
+              }
+
+              override fun getItemCount(): Int = items.size
+
+              override fun onBindViewHolder(h: VH, position: Int) {
+                  val m = items[position]
+                  Net.loadImage(m.cover, h.cover)
+                  h.title.text = m.title
+                  h.meta.text = m.genres.take(3).joinToString(" · ")
+                  h.score.text = if (m.score > 0) "★ " + (m.score / 10.0) else "★ -"
+                  val saved = Store.isSaved(m.id)
+                  h.heart.text = if (saved) "♥" else "♡"
+                  h.heart.setTextColor(if (saved) Ui.HEART else Color.WHITE)
+                  if (m.reason.isBlank()) {
+                      h.reason.visibility = View.GONE
+                  } else {
+                      h.reason.visibility = View.VISIBLE
+                      h.reason.text = "✦ " + m.reason
+                  }
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/MainActivity.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/MainActivity.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.drawable.ColorDrawable
+          import android.media.projection.MediaProjectionManager
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.text.InputType
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.inputmethod.EditorInfo
+          import android.view.inputmethod.InputMethodManager
+          import android.widget.EditText
+          import android.widget.FrameLayout
+          import android.widget.HorizontalScrollView
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import android.widget.Toast
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.activity.OnBackPressedCallback
+          import androidx.core.view.ViewCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsControllerCompat
+          import androidx.appcompat.app.AlertDialog
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.content.ContextCompat
+          import androidx.recyclerview.widget.GridLayoutManager
+          import androidx.recyclerview.widget.RecyclerView
+
+          private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+          private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+
+          class MainActivity : AppCompatActivity() {
+
+              private lateinit var discoverPage: LinearLayout
+              private lateinit var translatePage: ScrollView
+              private lateinit var webTab: WebTab
+              private lateinit var navBar: LinearLayout
+              private lateinit var savedPage: LinearLayout
+              private val navItems = ArrayList<LinearLayout>()
+
+              private lateinit var discoverAdapter: CardAdapter
+              private lateinit var savedAdapter: CardAdapter
+              private lateinit var discoverRv: RecyclerView
+              private lateinit var statusTv: TextView
+              private lateinit var searchEt: EditText
+              private lateinit var savedEmpty: TextView
+              private lateinit var startBtn: TextView
+              private lateinit var translateStatus: TextView
+
+              private val modeChips = ArrayList<TextView>()
+              private val genreChips = HashMap<String, TextView>()
+              private val selectedGenres = LinkedHashSet<String>()
+
+              private var mode = 0
+              private var page = 1
+              private var loading = false
+              private var hasMore = true
+              private var customList = false
+              private var requestToken = 0
+
+              private val modeNames = listOf("✦ بۆ تۆ", "باشترینەکان", "ترێندی ئێستا", "بەردەوامەکان")
+              private val genreList = listOf(
+                  "Action" to "ئاکشن", "Fantasy" to "فانتازیا", "Romance" to "ڕۆمانسی", "Comedy" to "کۆمیدی",
+                  "Drama" to "دراما", "Adventure" to "سەرکێشی", "Supernatural" to "سروشتبەدەر", "Mystery" to "نهێنی",
+                  "Psychological" to "دەروونی", "Thriller" to "هەیجان", "Horror" to "ترسناک",
+                  "Sci-Fi" to "زانستی خەیاڵی", "Slice of Life" to "ژیانی ڕۆژانە", "Sports" to "وەرزش"
+              )
+
+              private val notificationPermission =
+                  registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+              private val imagePicker =
+                  registerForActivityResult(ActivityResultContracts.GetContent()) { uri -> if (uri != null) runImageSearch(uri) }
+
+              private val captureLauncher =
+                  registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                      val data = result.data
+                      if (result.resultCode == Activity.RESULT_OK && data != null) {
+                          val serviceIntent = Intent(this, KurdishRealTimeTranslatorService::class.java)
+                          serviceIntent.putExtra("RESULT_CODE", result.resultCode)
+                          serviceIntent.putExtra("DATA_INTENT", data)
+                          ContextCompat.startForegroundService(this, serviceIntent)
+                          Toast.makeText(this, "ئێستا بڕۆ ناو مانگاکەت، خۆکارانە وەردەگێڕدرێت!", Toast.LENGTH_LONG).show()
+                          Net.ui.postDelayed({ refreshTranslateUi() }, 700)
+                          moveTaskToBack(true)
+                      }
+                  }
+
+              private fun dp(v: Int): Int = Ui.dp(this, v)
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  Store.init(this)
+                  window.setBackgroundDrawable(ColorDrawable(Ui.BG))
+                  window.statusBarColor = Ui.BG
+                  window.navigationBarColor = Ui.SURFACE
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.setBackgroundColor(Ui.BG)
+                  root.layoutDirection = View.LAYOUT_DIRECTION_RTL
+
+                  val pages = FrameLayout(this)
+                  root.addView(pages, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+                  discoverPage = buildDiscover()
+                  translatePage = buildTranslate()
+                  savedPage = buildSaved()
+                  pages.addView(discoverPage, FrameLayout.LayoutParams(MATCH, MATCH))
+                  pages.addView(translatePage, FrameLayout.LayoutParams(MATCH, MATCH))
+                  pages.addView(savedPage, FrameLayout.LayoutParams(MATCH, MATCH))
+                  webTab = WebTab(this)
+                  pages.addView(webTab.root, FrameLayout.LayoutParams(MATCH, MATCH))
+                  webTab.onFullscreen = { on -> setFullscreen(on) }
+
+                  root.addView(buildNav().also { navBar = it }, LinearLayout.LayoutParams(MATCH, WRAP))
+                  setContentView(root)
+                  Auth.init(this)
+                  AdminUi.attach(this)
+                  LoginGate.attach(this)
+                  ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+                      val b = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+                      v.setPadding(b.left, b.top, b.right, b.bottom)
+                      WindowInsetsCompat.CONSUMED
+                  }
+                  onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                      override fun handleOnBackPressed() {
+                          if (webTab.root.visibility == View.VISIBLE && webTab.back()) return
+                          isEnabled = false
+                          onBackPressedDispatcher.onBackPressed()
+                      }
+                  })
+
+                  if (Build.VERSION.SDK_INT >= 33 &&
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                  ) {
+                      notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                  }
+
+                  selectTab(0)
+                  styleModeChips()
+                  reload()
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  Auth.init(this)
+                  LoginGate.attach(this)
+                  refreshTranslateUi()
+              }
+
+              // ---------------- ناڤیگەیشن ----------------
+
+              private fun buildNav(): LinearLayout {
+                  val nav = LinearLayout(this)
+                  nav.orientation = LinearLayout.HORIZONTAL
+                  nav.setBackgroundColor(Ui.SURFACE)
+                  nav.setPadding(0, dp(6), 0, dp(6))
+                  val labels = listOf("✦" to "دۆزینەوە", "◉" to "وەرگێڕان", "♥" to "پاشەکەوت", "⊕" to "وێب")
+                  for ((i, pair) in labels.withIndex()) {
+                      val item = LinearLayout(this)
+                      item.orientation = LinearLayout.VERTICAL
+                      item.gravity = Gravity.CENTER
+                      item.setPadding(0, dp(4), 0, dp(4))
+                      val icon = Ui.tv(this, pair.first, 20f, Ui.MUTED, true)
+                      icon.gravity = Gravity.CENTER
+                      val label = Ui.tv(this, pair.second, 11f, Ui.MUTED, true)
+                      label.gravity = Gravity.CENTER
+                      item.addView(icon, LinearLayout.LayoutParams(WRAP, WRAP))
+                      item.addView(label, LinearLayout.LayoutParams(WRAP, WRAP))
+                      item.setOnClickListener { selectTab(i) }
+                      nav.addView(item, LinearLayout.LayoutParams(0, WRAP, 1f))
+                      navItems.add(item)
+                  }
+                  return nav
+              }
+
+              private fun selectTab(i: Int) {
+                  discoverPage.visibility = if (i == 0) View.VISIBLE else View.GONE
+                  translatePage.visibility = if (i == 1) View.VISIBLE else View.GONE
+                  savedPage.visibility = if (i == 2) View.VISIBLE else View.GONE
+                  webTab.root.visibility = if (i == 3) View.VISIBLE else View.GONE
+                  for ((idx, item) in navItems.withIndex()) {
+                      val color = if (idx == i) Ui.ACCENT2 else Ui.MUTED
+                      for (k in 0 until item.childCount) (item.getChildAt(k) as TextView).setTextColor(color)
+                  }
+                  if (i == 2) refreshSaved()
+                  if (i == 1) refreshTranslateUi()
+                  if (i == 3) webTab.onShown()
+                  if (i != 3) webTab.exitFullscreen()
+              }
+
+              private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+              private fun hideKeyboard() {
+                  val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                  imm.hideSoftInputFromWindow(searchEt.windowToken, 0)
+              }
+
+              // ---------------- پەڕەی دۆزینەوە ----------------
+
+              private fun pill(text: String): TextView {
+                  val t = Ui.tv(this, text, 13f, Ui.MUTED, true)
+                  t.setPadding(dp(14), dp(8), dp(14), dp(8))
+                  t.background = Ui.round(this, Ui.SURFACE2, 20)
+                  return t
+              }
+
+              private fun stylePill(t: TextView, selected: Boolean) {
+                  t.setTextColor(if (selected) Color.WHITE else Ui.MUTED)
+                  t.background = if (selected) Ui.grad(this, Ui.ACCENT, Ui.ACCENT2, 20) else Ui.round(this, Ui.SURFACE2, 20)
+              }
+
+              private fun styleModeChips() {
+                  for ((i, t) in modeChips.withIndex()) stylePill(t, i == mode)
+              }
+
+              private fun buildDiscover(): LinearLayout {
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+
+                  val header = LinearLayout(this)
+                  header.orientation = LinearLayout.HORIZONTAL
+                  header.gravity = Gravity.CENTER_VERTICAL
+                  header.setPadding(dp(16), dp(12), dp(16), dp(6))
+                  val logo = ImageView(this)
+                  logo.setImageResource(R.drawable.app_logo)
+                  header.addView(logo, LinearLayout.LayoutParams(dp(52), dp(52)))
+                  val titles = LinearLayout(this)
+                  titles.orientation = LinearLayout.VERTICAL
+                  titles.addView(Ui.tv(this, "دۆزینەوەی مانهوا", 20f, Ui.TEXT, true))
+                  titles.addView(Ui.tv(this, "AI ـی خۆت بۆ باشترین مانهواکان", 12f, Ui.MUTED))
+                  val tlp = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  tlp.marginStart = dp(10)
+                  header.addView(titles, tlp)
+                  val camLp = LinearLayout.LayoutParams(WRAP, WRAP)
+                  camLp.marginEnd = dp(6)
+                  header.addView(Ui.button(this, "📷", false) { pickImage() }, camLp)
+                  header.addView(Ui.button(this, "✦ AI", true) { showAiDialog() }, LinearLayout.LayoutParams(WRAP, WRAP))
+                  col.addView(header, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val searchRow = LinearLayout(this)
+                  searchRow.orientation = LinearLayout.HORIZONTAL
+                  searchRow.setPadding(dp(16), dp(4), dp(16), dp(4))
+                  searchEt = Ui.edit(this, "ناوی مانهوایەک بگەڕێ...")
+                  searchEt.isSingleLine = true
+                  searchEt.imeOptions = EditorInfo.IME_ACTION_SEARCH
+                  searchEt.setOnEditorActionListener { _, actionId, _ ->
+                      if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                          hideKeyboard()
+                          reload()
+                          true
+                      } else {
+                          false
+                      }
+                  }
+                  searchRow.addView(searchEt, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  val goBtn = Ui.button(this, "گەڕان", false) {
+                      hideKeyboard()
+                      reload()
+                  }
+                  val glp = LinearLayout.LayoutParams(WRAP, WRAP)
+                  glp.marginStart = dp(8)
+                  searchRow.addView(goBtn, glp)
+                  col.addView(searchRow, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val modeScroll = HorizontalScrollView(this)
+                  modeScroll.isHorizontalScrollBarEnabled = false
+                  val modeRow = LinearLayout(this)
+                  modeRow.orientation = LinearLayout.HORIZONTAL
+                  modeRow.setPadding(dp(16), dp(6), dp(16), dp(2))
+                  for ((i, name) in modeNames.withIndex()) {
+                      val chip = pill(name)
+                      chip.setOnClickListener {
+                          mode = i
+                          searchEt.setText("")
+                          styleModeChips()
+                          reload()
+                      }
+                      val lp = LinearLayout.LayoutParams(WRAP, WRAP)
+                      lp.marginEnd = dp(8)
+                      modeRow.addView(chip, lp)
+                      modeChips.add(chip)
+                  }
+                  modeScroll.addView(modeRow)
+                  col.addView(modeScroll, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val genreScroll = HorizontalScrollView(this)
+                  genreScroll.isHorizontalScrollBarEnabled = false
+                  val genreRow = LinearLayout(this)
+                  genreRow.orientation = LinearLayout.HORIZONTAL
+                  genreRow.setPadding(dp(16), dp(6), dp(16), dp(6))
+                  for (g in genreList) {
+                      val chip = pill(g.second)
+                      chip.textSize = 12f
+                      chip.setOnClickListener {
+                          if (selectedGenres.contains(g.first)) selectedGenres.remove(g.first) else selectedGenres.add(g.first)
+                          stylePill(chip, selectedGenres.contains(g.first))
+                          reload()
+                      }
+                      val lp = LinearLayout.LayoutParams(WRAP, WRAP)
+                      lp.marginEnd = dp(8)
+                      genreRow.addView(chip, lp)
+                      genreChips[g.first] = chip
+                  }
+                  genreScroll.addView(genreRow)
+                  col.addView(genreScroll, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  statusTv = Ui.tv(this, "", 12f, Ui.MUTED)
+                  statusTv.setPadding(dp(18), dp(2), dp(18), dp(2))
+                  col.addView(statusTv, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  discoverRv = RecyclerView(this)
+                  discoverRv.layoutManager = GridLayoutManager(this, 2)
+                  discoverRv.clipToPadding = false
+                  discoverRv.setPadding(dp(6), dp(4), dp(6), dp(12))
+                  discoverAdapter = CardAdapter(this, ArrayList(), true,
+                      { m -> openDetail(m) }, { m -> onHeart(m) }, { m -> onHide(m) })
+                  discoverRv.adapter = discoverAdapter
+                  discoverRv.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                      override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                          if (dy > 0 && !loading && hasMore && !customList) {
+                              val lm = rv.layoutManager as GridLayoutManager
+                              if (lm.findLastVisibleItemPosition() >= discoverAdapter.itemCount - 4) loadPage()
+                          }
+                      }
+                  })
+                  col.addView(discoverRv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+                  return col
+              }
+
+              private fun reload() {
+                  requestToken++
+                  loading = false
+                  page = 1
+                  hasMore = true
+                  customList = false
+                  discoverAdapter.items.clear()
+                  discoverAdapter.notifyDataSetChanged()
+                  loadPage()
+              }
+
+              private fun fetch(q: String, genres: List<String>, md: Int, pg: Int): List<Manhwa> {
+                  if (q.isNotEmpty()) return Net.discover("SEARCH_MATCH", genres, q, "", pg, 24, 0, 0)
+                  return when (md) {
+                      0 -> {
+                          val g = if (genres.isNotEmpty()) genres else Store.topTasteGenres(3)
+                          val list = Net.discover("SCORE_DESC", g, "", "", pg, 40, 70, 4000)
+                          list.sortedByDescending { it.score / 100.0 + 0.15 * Store.affinityNorm(it) }
+                      }
+                      1 -> Net.discover("SCORE_DESC", genres, "", "", pg, 24, 75, 10000)
+                      2 -> Net.discover("TRENDING_DESC", genres, "", "", pg, 24, 0, 0)
+                      else -> Net.discover("POPULARITY_DESC", genres, "", "RELEASING", pg, 24, 0, 0)
+                  }
+              }
+
+              private fun loadPage() {
+                  if (loading) return
+                  loading = true
+                  val token = requestToken
+                  val q = searchEt.text.toString().trim()
+                  val genres = selectedGenres.toList()
+                  val curPage = page
+                  val curMode = mode
+                  if (curPage == 1) statusTv.text = "لە دۆزینەوەدایە..."
+                  Net.async(
+                      { fetch(q, genres, curMode, curPage) },
+                      { list ->
+                          if (token == requestToken) {
+                              loading = false
+                              applyResults(list, curPage, curMode, q)
+                          }
+                      },
+                      { err ->
+                          if (token == requestToken) {
+                              loading = false
+                              statusTv.text = "هەڵە: " + err
+                          }
+                      }
+                  )
+              }
+
+              private fun applyResults(list: List<Manhwa>, pg: Int, md: Int, q: String) {
+                  val hidden = Store.hiddenIds()
+                  val existing = HashSet<Int>()
+                  for (it in discoverAdapter.items) existing.add(it.id)
+                  val add = list.filter { !hidden.contains(it.id) && !existing.contains(it.id) }
+                  val start = discoverAdapter.items.size
+                  discoverAdapter.items.addAll(add)
+                  discoverAdapter.notifyItemRangeInserted(start, add.size)
+                  hasMore = list.size >= 10
+                  page = pg + 1
+                  statusTv.text = when {
+                      discoverAdapter.items.isEmpty() -> "هیچ ئەنجامێک نەدۆزرایەوە"
+                      q.isEmpty() && md == 0 && !Store.hasTaste() -> "✦ چەند مانهوایەک پاشەکەوت بکە ♥ تا AI تامەکەت بناسێت"
+                      q.isEmpty() && md == 0 -> "✦ هەڵبژێردراوە بەپێی تامی تۆ"
+                      else -> discoverAdapter.items.size.toString() + " مانهوا"
+                  }
+              }
+
+              private fun showCustom(list: List<Manhwa>, label: String) {
+                  requestToken++
+                  loading = false
+                  customList = true
+                  hasMore = false
+                  val hidden = Store.hiddenIds()
+                  discoverAdapter.items.clear()
+                  discoverAdapter.items.addAll(list.filter { !hidden.contains(it.id) })
+                  discoverAdapter.notifyDataSetChanged()
+                  statusTv.text = label
+                  selectTab(0)
+                  discoverRv.scrollToPosition(0)
+              }
+
+              private fun onHeart(m: Manhwa) {
+                  val now = Store.toggleSave(m)
+                  discoverAdapter.notifyDataSetChanged()
+                  refreshSaved()
+                  toast(if (now) "زیادکرا بۆ پاشەکەوتکراوەکان ♥" else "لابرا لە پاشەکەوتکراوەکان")
+              }
+
+              private fun onHide(m: Manhwa) {
+                  Store.hide(m)
+                  val i = discoverAdapter.items.indexOf(m)
+                  if (i >= 0) {
+                      discoverAdapter.items.removeAt(i)
+                      discoverAdapter.notifyItemRemoved(i)
+                  }
+                  toast("شاردرایەوە — AI تامەکەت فێر دەبێت")
+              }
+
+              // ---------------- وردەکاری ----------------
+
+              private fun openDetail(m: Manhwa) {
+                  val dlg = AlertDialog.Builder(this).create()
+                  val sv = ScrollView(this)
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  col.setPadding(dp(16), dp(16), dp(16), dp(16))
+                  col.background = Ui.round(this, Ui.SURFACE, 22)
+
+                  val top = LinearLayout(this)
+                  top.orientation = LinearLayout.HORIZONTAL
+                  val cover = ImageView(this)
+                  cover.scaleType = ImageView.ScaleType.CENTER_CROP
+                  cover.setBackgroundColor(Ui.SURFACE2)
+                  Ui.clipRound(cover, 14)
+                  Net.loadImage(m.cover, cover)
+                  top.addView(cover, LinearLayout.LayoutParams(dp(120), dp(176)))
+
+                  val info = LinearLayout(this)
+                  info.orientation = LinearLayout.VERTICAL
+                  info.setPaddingRelative(dp(12), 0, 0, 0)
+                  info.addView(Ui.tv(this, m.title, 18f, Ui.TEXT, true))
+                  if (m.altTitle.isNotBlank()) info.addView(Ui.tv(this, m.altTitle, 12f, Ui.MUTED))
+                  val meta = ArrayList<String>()
+                  if (m.score > 0) meta.add("★ " + (m.score / 10.0))
+                  if (m.chapters > 0) meta.add(m.chapters.toString() + " ئەڵقە")
+                  val st = Ui.statusKu(m.status)
+                  if (st.isNotEmpty()) meta.add(st)
+                  if (m.year > 0) meta.add(m.year.toString())
+                  val metaTv = Ui.tv(this, meta.joinToString(" · "), 12f, Ui.ACCENT2, true)
+                  metaTv.setPadding(0, dp(8), 0, 0)
+                  info.addView(metaTv)
+                  val gTv = Ui.tv(this, m.genres.joinToString(" · "), 12f, Ui.MUTED)
+                  gTv.setPadding(0, dp(6), 0, 0)
+                  info.addView(gTv)
+                  top.addView(info, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(top, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  if (m.reason.isNotBlank()) {
+                      val r = Ui.tv(this, "✦ AI: " + m.reason, 13f, Ui.ACCENT2, true)
+                      r.setPadding(0, dp(12), 0, 0)
+                      col.addView(r)
+                  }
+
+                  val desc = Ui.tv(this, if (m.description.isBlank()) "—" else m.description, 14f, Ui.TEXT)
+                  desc.setPadding(0, dp(14), 0, 0)
+                  desc.setLineSpacing(0f, 1.15f)
+                  col.addView(desc)
+
+                  val ku = Ui.tv(this, "", 14f, Ui.ACCENT2)
+                  ku.visibility = View.GONE
+                  ku.setPadding(0, dp(10), 0, 0)
+                  ku.setLineSpacing(0f, 1.15f)
+                  col.addView(ku)
+
+                  val row1 = LinearLayout(this)
+                  row1.orientation = LinearLayout.HORIZONTAL
+                  row1.setPadding(0, dp(14), 0, 0)
+                  val saveBtn = Ui.button(this, if (Store.isSaved(m.id)) "♥ لابردن" else "♡ پاشەکەوت", true)
+                  saveBtn.setOnClickListener {
+                      val now = Store.toggleSave(m)
+                      saveBtn.text = if (now) "♥ لابردن" else "♡ پاشەکەوت"
+                      discoverAdapter.notifyDataSetChanged()
+                      refreshSaved()
+                  }
+                  val trBtn = Ui.button(this, "وەرگێڕانی کورتە", false)
+                  trBtn.setOnClickListener {
+                      if (m.description.isBlank()) return@setOnClickListener
+                      ku.visibility = View.VISIBLE
+                      ku.text = "لە وەرگێڕاندایە..."
+                      Net.async(
+                          { Net.translateKu(m.description) },
+                          { s -> ku.text = s },
+                          { err -> ku.text = "نەتوانرا وەربگێڕدرێت: " + err }
+                      )
+                  }
+                  val lp1 = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  lp1.marginEnd = dp(8)
+                  row1.addView(saveBtn, lp1)
+                  row1.addView(trBtn, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row1, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val row2 = LinearLayout(this)
+                  row2.orientation = LinearLayout.HORIZONTAL
+                  row2.setPadding(0, dp(8), 0, 0)
+                  val simBtn = Ui.button(this, "✦ هاوشێوەکان", false)
+                  simBtn.setOnClickListener {
+                      dlg.dismiss()
+                      statusTv.text = "لە دۆزینەوەی هاوشێوەکان..."
+                      selectTab(0)
+                      Net.async(
+                          { Net.similar(m.id) },
+                          { list -> showCustom(list, "هاوشێوەی «" + m.title + "»") },
+                          { err -> statusTv.text = "هەڵە: " + err }
+                      )
+                  }
+                  val linkBtn = Ui.button(this, "AniList ↗", false)
+                  linkBtn.setOnClickListener {
+                      if (m.url.isNotBlank()) {
+                          try {
+                              startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(m.url)))
+                          } catch (_: Exception) { }
+                      }
+                  }
+                  val lp2 = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  lp2.marginEnd = dp(8)
+                  row2.addView(simBtn, lp2)
+                  row2.addView(linkBtn, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row2, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  sv.addView(col)
+                  dlg.setView(sv)
+                  dlg.show()
+                  dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                  dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.94).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+              }
+
+              // ---------------- AI ----------------
+
+              private fun pickImage() {
+                  imagePicker.launch("image/*")
+              }
+
+              private fun runImageSearch(uri: Uri) {
+                  selectTab(0)
+                  statusTv.text = "✦ AI وێنەکە دەپشکنێت..."
+                  Net.async(
+                      { Vision.identify(Vision.prepare(this, uri)) },
+                      { list ->
+                          if (list.isEmpty()) {
+                              statusTv.text = "AI نەیتوانی بیناسێتەوە، وێنەیەکی ڕوونتر تاقی بکەرەوە"
+                          } else {
+                              showCustom(list, "✦ ئەنجامی گەڕان بە وێنە")
+                          }
+                      },
+                      { err -> statusTv.text = aiErr(err) }
+                  )
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  webTab.destroy()
+              }
+
+              private fun setFullscreen(on: Boolean) {
+                  navBar.visibility = if (on) View.GONE else View.VISIBLE
+                  val c = WindowCompat.getInsetsController(window, window.decorView)
+                  c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                  if (on) c.hide(WindowInsetsCompat.Type.systemBars()) else c.show(WindowInsetsCompat.Type.systemBars())
+              }
+
+              private fun aiErr(err: String): String =
+                  if (err.contains("HTTP 429"))
+                      "داواکاری زۆرە، کەمێک چاوەڕێ بکە و دووبارە هەوڵ بدە"
+                  else if (err.contains("API key", true) || err.contains("PERMISSION_DENIED") || err.contains("دانەنراوە"))
+                      "کلیلی AI هەڵەیە یان دانەنراوە"
+                  else
+                      "AI هەڵەی دا: " + err.take(140)
+
+              private fun showAiDialog() {
+                  val dlg = AlertDialog.Builder(this).create()
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  col.setPadding(dp(18), dp(18), dp(18), dp(18))
+                  col.background = Ui.round(this, Ui.SURFACE, 22)
+
+                  col.addView(Ui.tv(this, "✦ AI بۆ دۆزینەوەی مانهوا", 18f, Ui.TEXT, true))
+                  val sub = Ui.tv(this, "بنووسە چی دەتەوێت بیخوێنیتەوە (بە کوردی، عەرەبی یان ئینگلیزی). AI تامی پاشەکەوتکراوەکانیشت لەبەرچاو دەگرێت.", 12f, Ui.MUTED)
+                  sub.setPadding(0, dp(6), 0, dp(10))
+                  col.addView(sub)
+
+                  val et = Ui.edit(this, "نموونە: فانتازیا و ئاکشن، کارەکتەری سەرەکی زۆر بەهێز و چیرۆکی تۆڵەکردنەوە")
+                  et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                  et.minLines = 3
+                  et.gravity = Gravity.TOP
+                  col.addView(et, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val sugRow = HorizontalScrollView(this)
+                  sugRow.isHorizontalScrollBarEnabled = false
+                  val sugs = LinearLayout(this)
+                  sugs.orientation = LinearLayout.HORIZONTAL
+                  sugs.setPadding(0, dp(8), 0, dp(8))
+                  val ideas = listOf("تۆڵەکردنەوە و ئاکشن", "ڕۆمانسی ئارام", "سیستەم و پێشکەوتن (leveling)", "نهێنی و ترس", "کۆمیدی و ژیانی ڕۆژانە")
+                  for (idea in ideas) {
+                      val chip = pill(idea)
+                      chip.textSize = 12f
+                      chip.setOnClickListener { et.setText(idea) }
+                      val lp = LinearLayout.LayoutParams(WRAP, WRAP)
+                      lp.marginEnd = dp(6)
+                      sugs.addView(chip, lp)
+                  }
+                  sugRow.addView(sugs)
+                  col.addView(sugRow, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val row = LinearLayout(this)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  val go = Ui.button(this, "✦ بدۆزەرەوە", true) {
+                      val text = et.text.toString().trim()
+                      if (text.isEmpty()) {
+                          toast("تکایە شتێک بنووسە")
+                      } else {
+                          dlg.dismiss()
+                          runAi(text)
+                      }
+                  }
+                  val keyBtn = Ui.button(this, "ئەکاونت", false) {
+                      dlg.dismiss()
+                      showAccount()
+                  }
+                  val glp = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  glp.marginEnd = dp(8)
+                  row.addView(go, glp)
+                  row.addView(keyBtn, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  dlg.setView(col)
+                  dlg.show()
+                  dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                  dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.94).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+              }
+
+              private fun showAccount() {
+                  AlertDialog.Builder(this)
+                      .setTitle("ئەکاونت")
+                      .setMessage(if (Auth.email.isEmpty()) "چوونەژوورەوە نەکراوە" else Auth.email)
+                      .setPositiveButton("داخستن", null)
+                      .setNegativeButton("چوونەدەرەوە") { _, _ ->
+                          Auth.signOut()
+                          LoginGate.attach(this)
+                      }
+                      .show()
+              }
+
+              private fun showKeyDialog(onSaved: (() -> Unit)?) {
+                  val dlg = AlertDialog.Builder(this).create()
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.layoutDirection = View.LAYOUT_DIRECTION_RTL
+                  col.setPadding(dp(18), dp(18), dp(18), dp(18))
+                  col.background = Ui.round(this, Ui.SURFACE, 22)
+
+                  col.addView(Ui.tv(this, "کلیلی Gemini (بێبەرامبەر)", 18f, Ui.TEXT, true))
+                  val sub = Ui.tv(this, "بۆ ئەوەی AI کار بکات، کلیلێکی بێبەرامبەر لە Google AI Studio وەربگرە و لێرە دایبنێ. کلیلەکە تەنها لەسەر مۆبایلەکەت دەمێنێتەوە.", 12f, Ui.MUTED)
+                  sub.setPadding(0, dp(6), 0, dp(10))
+                  col.addView(sub)
+
+                  val keyEt = Ui.edit(this, "AIza...")
+                  keyEt.setText(Store.apiKey)
+                  keyEt.isSingleLine = true
+                  col.addView(keyEt, LinearLayout.LayoutParams(MATCH, WRAP))
+                  val modelEt = Ui.edit(this, "gemini-flash-latest")
+                  modelEt.setText(Store.model)
+                  modelEt.isSingleLine = true
+                  val mlp = LinearLayout.LayoutParams(MATCH, WRAP)
+                  mlp.topMargin = dp(8)
+                  col.addView(modelEt, mlp)
+
+                  val row = LinearLayout(this)
+                  row.orientation = LinearLayout.HORIZONTAL
+                  row.setPadding(0, dp(12), 0, 0)
+                  val save = Ui.button(this, "پاشەکەوت", true) {
+                      Store.apiKey = keyEt.text.toString()
+                      Store.model = modelEt.text.toString()
+                      dlg.dismiss()
+                      if (Store.apiKey.isNotBlank()) onSaved?.invoke()
+                  }
+                  val get = Ui.button(this, "وەرگرتنی کلیل ↗", false) {
+                      try {
+                          startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/apikey")))
+                      } catch (_: Exception) { }
+                  }
+                  val slp = LinearLayout.LayoutParams(0, WRAP, 1f)
+                  slp.marginEnd = dp(8)
+                  row.addView(save, slp)
+                  row.addView(get, LinearLayout.LayoutParams(0, WRAP, 1f))
+                  col.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  dlg.setView(col)
+                  dlg.show()
+                  dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                  dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.94).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+              }
+
+              private fun runAi(text: String) {
+                  selectTab(0)
+                  statusTv.text = "✦ AI بیر دەکاتەوە..."
+                  Net.async(
+                      { Net.recommend(text) },
+                      { list ->
+                          if (list.isEmpty()) {
+                              statusTv.text = "AI هیچ ئەنجامێکی نەدۆزییەوە، دووبارە هەوڵ بدە"
+                          } else {
+                              showCustom(list, "✦ پێشنیاری AI بۆ: «" + text + "»")
+                          }
+                      },
+                      { err -> statusTv.text = aiErr(err) }
+                  )
+              }
+
+              // ---------------- وەرگێڕانی ڕاستەوخۆ ----------------
+
+              private fun buildTranslate(): ScrollView {
+                  val sv = ScrollView(this)
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.gravity = Gravity.CENTER_HORIZONTAL
+                  col.setPadding(dp(20), dp(24), dp(20), dp(24))
+
+                  val logo = ImageView(this)
+                  logo.setImageResource(R.drawable.app_logo)
+                  col.addView(logo, LinearLayout.LayoutParams(dp(150), dp(150)))
+                  col.addView(Ui.tv(this, "وەرگێڕانی ڕاستەوخۆ", 22f, Ui.TEXT, true))
+                  val sub = Ui.tv(this, "لەسەر هەر ئەپ یان سایتێکی مانهوا، دەقی ئینگلیزی لە شوێنی خۆی بە کوردی دەگۆڕێت.", 13f, Ui.MUTED)
+                  sub.gravity = Gravity.CENTER
+                  sub.setPadding(0, dp(6), 0, dp(18))
+                  col.addView(sub)
+
+                  startBtn = Ui.button(this, "", true)
+                  startBtn.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
+                  startBtn.setPadding(dp(20), dp(18), dp(20), dp(18))
+                  startBtn.setOnClickListener { toggleTranslator() }
+                  col.addView(startBtn, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  translateStatus = Ui.tv(this, "", 13f, Ui.MUTED)
+                  translateStatus.gravity = Gravity.CENTER
+                  translateStatus.setPadding(0, dp(10), 0, dp(16))
+                  col.addView(translateStatus, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val card = LinearLayout(this)
+                  card.orientation = LinearLayout.VERTICAL
+                  card.background = Ui.round(this, Ui.SURFACE, 18)
+                  card.setPadding(dp(16), dp(14), dp(16), dp(14))
+                  card.addView(Ui.tv(this, "چۆن کار دەکات؟", 15f, Ui.TEXT, true))
+                  val steps = listOf(
+                      "١. دوگمەی سەرەوە بدە و مۆڵەتەکان (Display over other apps و تۆمارکردنی شاشە) ڕێپێبدە.",
+                      "٢. بڕۆ بۆ ئەو ئەپ یان سایتەی مانهوا دەخوێنیتەوە.",
+                      "٣. سکڕۆڵ بکە. کاتێک وەستایت، دەقی ئینگلیزی بە کوردی دەگۆڕدرێت.",
+                      "٤. بۆ وەستاندن، بگەڕێوە ئێرە و دوگمەکە بدە.",
+                      "تێبینی: ئینتەرنێت پێویستە بۆ وەرگێڕان."
+                  )
+                  for (s in steps) {
+                      val t = Ui.tv(this, s, 13f, Ui.MUTED)
+                      t.setPadding(0, dp(8), 0, 0)
+                      card.addView(t)
+                  }
+                  col.addView(card, LinearLayout.LayoutParams(MATCH, WRAP))
+                  sv.addView(col)
+                  return sv
+              }
+
+              private fun refreshTranslateUi() {
+                  if (!::startBtn.isInitialized) return
+                  val on = KurdishRealTimeTranslatorService.running
+                  startBtn.text = if (on) "■ وەستاندنی وەرگێڕان" else "▶ دەستپێکردنی وەرگێڕانی ڕاستەوخۆ"
+                  startBtn.background = if (on) Ui.round(this, Ui.HEART, 14) else Ui.grad(this, Ui.ACCENT, Ui.ACCENT2, 14)
+                  translateStatus.text = if (on) "چالاکە — بڕۆ بۆ مانهواکەت" else "ئامادەیە"
+              }
+
+              private fun toggleTranslator() {
+                  if (KurdishRealTimeTranslatorService.running) {
+                      stopService(Intent(this, KurdishRealTimeTranslatorService::class.java))
+                      Net.ui.postDelayed({ refreshTranslateUi() }, 500)
+                      return
+                  }
+                  if (!Settings.canDrawOverlays(this)) {
+                      toast("تکایە مۆڵەتی Display over other apps چالاک بکە، پاشان دووبارە دوگمەکە بدە")
+                      startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
+                      return
+                  }
+                  val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                  captureLauncher.launch(mpm.createScreenCaptureIntent())
+              }
+
+              // ---------------- پاشەکەوتکراوەکان ----------------
+
+              private fun buildSaved(): LinearLayout {
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  val title = Ui.tv(this, "♥ پاشەکەوتکراوەکان", 20f, Ui.TEXT, true)
+                  title.setPadding(dp(18), dp(18), dp(18), dp(8))
+                  col.addView(title, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  savedEmpty = Ui.tv(this, "هێشتا هیچت پاشەکەوت نەکردووە.\nلە بەشی دۆزینەوە دوگمەی ♡ بدە، AI لێیەوە تامەکەت فێر دەبێت.", 14f, Ui.MUTED)
+                  savedEmpty.gravity = Gravity.CENTER
+                  savedEmpty.setPadding(dp(24), dp(40), dp(24), dp(24))
+                  col.addView(savedEmpty, LinearLayout.LayoutParams(MATCH, WRAP))
+
+                  val rv = RecyclerView(this)
+                  rv.layoutManager = GridLayoutManager(this, 2)
+                  rv.clipToPadding = false
+                  rv.setPadding(dp(6), dp(4), dp(6), dp(12))
+                  savedAdapter = CardAdapter(this, ArrayList(), false,
+                      { m -> openDetail(m) }, { m -> onHeart(m) }, { m -> onHide(m) })
+                  rv.adapter = savedAdapter
+                  col.addView(rv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+                  return col
+              }
+
+              private fun refreshSaved() {
+                  if (!::savedAdapter.isInitialized) return
+                  savedAdapter.items.clear()
+                  savedAdapter.items.addAll(Store.saved())
+                  savedAdapter.notifyDataSetChanged()
+                  savedEmpty.visibility = if (savedAdapter.items.isEmpty()) View.VISIBLE else View.GONE
+              }
+          }
+          KMEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/KurdishRealTimeTranslatorService.kt)
+          cat > app/src/main/java/com/kurdish/manhwareal/KurdishRealTimeTranslatorService.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.app.Activity
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.graphics.Bitmap
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.graphics.Rect
+          import android.hardware.display.DisplayManager
+          import android.hardware.display.VirtualDisplay
+          import android.media.Image
+          import android.media.ImageReader
+          import android.media.projection.MediaProjection
+          import android.media.projection.MediaProjectionManager
+          import android.os.Build
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.os.SystemClock
+          import android.util.DisplayMetrics
+          import android.util.Log
+          import android.view.Gravity
+          import android.view.View
+          import android.view.WindowManager
+          import android.widget.TextView
+          import com.google.mlkit.vision.common.InputImage
+          import com.google.mlkit.vision.text.TextRecognition
+          import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+          import kotlin.math.abs
+
+          class KurdishRealTimeTranslatorService : Service() {
+
+              private class Block(val text: String, val rect: Rect, val bg: Int, val fill: Bitmap? = null, val core: Rect? = null)
+
+              private val handler = Handler(Looper.getMainLooper())
+              private val checkInterval = 60L
+              private val stableMs = 120L // ئەگەر ١٢٠ms وێنەی نوێ نەهات = سکڕۆڵ وەستاوە
+              private val captureWidth = 720f
+
+              private val topIgnore = 0.12f
+              private val bottomIgnore = 0.03f
+
+              // ئەگەر زیاتر لەم ڕێژەیە لە وێنەکە گۆڕا، واتە سکڕۆڵ دەکرێت
+              private val changeThreshold = 0.006f
+
+              private var screenW = 0
+              private var screenH = 0
+              private var capW = 0
+              private var capH = 0
+              private var scale = 1f
+              private var lastFrameTime = 0L
+              private var mediaProjection: MediaProjection? = null
+              private var virtualDisplay: VirtualDisplay? = null
+              private var imageReader: ImageReader? = null
+              private var windowManager: WindowManager? = null
+              // هەر بلۆکێک پەنجەرەی بچووکی خۆی هەیە، نەک یەک پەنجەرەی تەواوی شاشە (بۆ ئەوەی سکڕۆڵ بلۆک نەکرێت)
+              private val windows = ArrayList<View>()
+
+              private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+
+              private var lastBitmap: Bitmap? = null
+              private var prevSig: IntArray? = null
+              private var overlayVisible = false
+              private var needsTranslate = true
+              private var needFreshFrame = false
+              private var suppressUntil = 0L
+              private var isProcessing = false
+              private var generation = 0
+              private var started = false
+
+              private val runnableCode = object : Runnable {
+                  override fun run() {
+                      if (!started) return
+                      try {
+                          captureAndProcess()
+                      } catch (e: Exception) {
+                          Log.e(TAG, "هەڵە: ${e.message}")
+                      }
+                      handler.postDelayed(this, checkInterval)
+                  }
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (started) return START_NOT_STICKY
+
+                  createNotificationChannel()
+                  val notification = Notification.Builder(this, CHANNEL_ID)
+                      .setContentTitle("Kurdish Manhwa Real")
+                      .setContentText("چاودێری شاشە دەکرێت بۆ وەرگێڕانی خێرا...")
+                      .setSmallIcon(android.R.drawable.ic_menu_view)
+                      .build()
+
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                  } else {
+                      startForeground(1, notification)
+                  }
+
+                  val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
+                  val dataIntent: Intent? = if (Build.VERSION.SDK_INT >= 33) {
+                      intent?.getParcelableExtra("DATA_INTENT", Intent::class.java)
+                  } else {
+                      @Suppress("DEPRECATION")
+                      intent?.getParcelableExtra("DATA_INTENT")
+                  }
+
+                  if (dataIntent == null || resultCode != Activity.RESULT_OK) {
+                      stopSelf()
+                      return START_NOT_STICKY
+                  }
+
+                  try {
+                      val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                      mediaProjection = mpManager.getMediaProjection(resultCode, dataIntent)
+                      mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                          override fun onStop() {
+                              handler.post { stopSelf() }
+                          }
+                      }, handler)
+
+                      setupScreenCapture()
+                      setupOverlayWindow()
+                      started = true
+                      running = true
+                      warmUp()
+                      handler.post(runnableCode)
+                  } catch (e: Exception) {
+                      Log.e(TAG, "هەڵە لە دەستپێکردن: ${e.message}")
+                      stopSelf()
+                  }
+
+                  return START_NOT_STICKY
+              }
+
+              private fun setupScreenCapture() {
+                  val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                  val dpi = resources.displayMetrics.densityDpi
+                  if (Build.VERSION.SDK_INT >= 30) {
+                      val b = wm.maximumWindowMetrics.bounds
+                      screenW = b.width()
+                      screenH = b.height()
+                  } else {
+                      val m = DisplayMetrics()
+                      @Suppress("DEPRECATION")
+                      wm.defaultDisplay.getRealMetrics(m)
+                      screenW = m.widthPixels
+                      screenH = m.heightPixels
+                  }
+                  scale = if (screenW > captureWidth) captureWidth / screenW else 1f
+                  capW = (screenW * scale).toInt()
+                  capH = (screenH * scale).toInt()
+                  imageReader = ImageReader.newInstance(capW, capH, PixelFormat.RGBA_8888, 2)
+                  virtualDisplay = mediaProjection?.createVirtualDisplay(
+                      "ScreenCapture", capW, capH, dpi,
+                      DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                      imageReader?.surface, null, null
+                  )
+              }
+
+              private fun setupOverlayWindow() {
+                  windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+              }
+
+              private fun addWindow(tv: TextView, x: Int, y: Int, w: Int, h: Int) {
+                  val wm = windowManager ?: return
+                  val params = WindowManager.LayoutParams(
+                      w, h,
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                          WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                          WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                          WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                      PixelFormat.TRANSLUCENT
+                  ).apply {
+                      gravity = Gravity.TOP or Gravity.START
+                      this.x = x
+                      this.y = y
+                      alpha = 1f
+                      if (Build.VERSION.SDK_INT >= 30) {
+                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                      } else if (Build.VERSION.SDK_INT >= 28) {
+                          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                      }
+                  }
+                  try {
+                      wm.addView(tv, params)
+                      windows.add(tv)
+                  } catch (e: Exception) {
+                      Log.e(TAG, "addView هەڵە: ${e.message}")
+                  }
+              }
+
+              private fun warmUp() {
+                  try {
+                      recognizer.process(InputImage.fromBitmap(Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888), 0))
+                  } catch (_: Exception) {}
+              }
+
+              // ---------- وێنەگرتن و دۆزینەوەی سکڕۆڵ ----------
+
+              private fun toBitmap(image: Image): Bitmap? {
+                  return try {
+                      val plane = image.planes[0]
+                      val pixelStride = plane.pixelStride
+                      val rowPadding = plane.rowStride - pixelStride * image.width
+                      val full = Bitmap.createBitmap(
+                          image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888
+                      )
+                      full.copyPixelsFromBuffer(plane.buffer)
+                      if (rowPadding == 0) {
+                          full
+                      } else {
+                          val cropped = Bitmap.createBitmap(full, 0, 0, image.width, image.height)
+                          full.recycle()
+                          cropped
+                      }
+                  } catch (e: Exception) {
+                      Log.e(TAG, "هەڵە لە وێنەگرتن: ${e.message}")
+                      null
+                  } finally {
+                      image.close()
+                  }
+              }
+
+              private fun signature(bmp: Bitmap): IntArray {
+                  val small = Bitmap.createScaledBitmap(bmp, SIG_W, SIG_H, true)
+                  val px = IntArray(SIG_W * SIG_H)
+                  small.getPixels(px, 0, SIG_W, 0, 0, SIG_W, SIG_H)
+                  if (small !== bmp) small.recycle()
+                  for (i in px.indices) {
+                      val p = px[i]
+                      px[i] = (Color.red(p) * 3 + Color.green(p) * 6 + Color.blue(p)) / 10
+                  }
+                  return px
+              }
+
+              private fun changedFraction(a: IntArray, b: IntArray): Float {
+                  var n = 0
+                  for (i in a.indices) {
+                      if (abs(a[i] - b[i]) > 30) n++
+                  }
+                  return n.toFloat() / a.size
+              }
+
+              private fun captureAndProcess() {
+                  val reader = imageReader ?: return
+                  val image = reader.acquireLatestImage()
+                  var newFrame = false
+                  if (image != null) {
+                      val fresh = toBitmap(image)
+                      if (fresh != null) {
+                          lastBitmap?.recycle()
+                          lastBitmap = fresh
+                          newFrame = true
+                      }
+                  }
+                  val bmp = lastBitmap ?: return
+
+                  if (newFrame) {
+                      lastFrameTime = SystemClock.uptimeMillis()
+                      val sig = signature(bmp)
+                      val prev = prevSig
+                      prevSig = sig
+                      if (!overlayVisible) needFreshFrame = false
+                      if (SystemClock.uptimeMillis() < suppressUntil) return
+
+                      if (prev == null) {
+                          needsTranslate = true
+                      } else if (changedFraction(prev, sig) > changeThreshold) {
+                          generation++
+                          needsTranslate = true
+                          if (overlayVisible) {
+                              hideOverlay()
+                              needFreshFrame = true
+                          }
+                          return
+                      }
+                  }
+
+                  if (needsTranslate && !overlayVisible && !needFreshFrame && !isProcessing &&
+                      SystemClock.uptimeMillis() - lastFrameTime >= stableMs
+                  ) {
+                      needsTranslate = false
+                      lastBitmap = null
+                      runOcr(bmp, generation)
+                  }
+              }
+
+              // ---------- OCR ----------
+
+              private fun lum(c: Int): Int = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
+
+              private fun sampleBg(bmp: Bitmap, r: Rect): Int {
+                  val cx = (r.left + r.right) / 2
+                  val cy = (r.top + r.bottom) / 2
+                  val m = 6
+                  val pts = listOf(
+                      (r.left - m) to (r.top - m), cx to (r.top - m), (r.right + m) to (r.top - m),
+                      (r.left - m) to cy, (r.right + m) to cy,
+                      (r.left - m) to (r.bottom + m), cx to (r.bottom + m), (r.right + m) to (r.bottom + m)
+                  )
+                  val cols = ArrayList<Int>()
+                  for ((x, y) in pts) {
+                      if (x in 0 until bmp.width && y in 0 until bmp.height) cols.add(bmp.getPixel(x, y))
+                  }
+                  if (cols.isEmpty()) return Color.WHITE
+                  cols.sortBy { lum(it) }
+                  return cols[cols.size / 2] or (0xFF shl 24)
+              }
+
+              private fun padRect(b: Rect): Rect {
+                  val px = (b.width() * 0.12f).toInt() + 5
+                  val py = (b.height() * 0.14f).toInt() + 4
+                  return Rect(b.left - px, b.top - py, b.right + px, b.bottom + py)
+              }
+
+              private fun runOcr(bmp: Bitmap, gen: Int) {
+                  isProcessing = true
+                  val h = bmp.height
+                  recognizer.process(InputImage.fromBitmap(bmp, 0))
+                      .addOnSuccessListener { visionText ->
+                          if (!started || gen != generation) return@addOnSuccessListener
+                          val blocks = ArrayList<Block>()
+                          val raw = ArrayList<Merge.Item>()
+                          for (b in visionText.textBlocks) {
+                              val box = b.boundingBox ?: continue
+                              val t = b.text.replace("\n", " ").trim()
+                              if (t.count { it.isLetter() } < 2) continue
+                              if (box.top < h * topIgnore || box.bottom > h * (1f - bottomIgnore)) continue
+                              raw.add(Merge.Item(t, Rect(box)))
+            
