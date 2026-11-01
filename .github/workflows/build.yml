@@ -6412,11 +6412,6 @@ jobs:
           +KUhfrmIGWN71vOYzvSWrFahAAWNgcc1ZpZQizpsj2qtwyzadYGbMcjPcSsWIbQUlFHImAABKwM1
           TAtNCVzxAAAAAAAA
           KMEOF
-      - name: Keep same signing key
-        uses: actions/cache@v4
-        with:
-          path: app/km.keystore
-          key: km-keystore-v1
       - name: Prepare signing key
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
@@ -6425,10 +6420,7 @@ jobs:
           PASS="${KM_STORE_PASS:-kmpass123}"
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > app/km.keystore
-          elif [ -f app/km.keystore ]; then
-            echo "Using cached keystore"
           else
-           echo "::warning::KEYSTORE_B64 secret is missing, using a TEMPORARY key. Google sign-in will not work until you add it."
             keytool -genkeypair -keystore app/km.keystore -alias km -keyalg RSA -keysize 2048 -validity 10000 -storepass "$PASS" -keypass "$PASS" -dname "CN=KurdishManhwaTemp"
           fi
           keytool -list -v -keystore app/km.keystore -alias km -storepass "$PASS" | grep -E "SHA1|SHA256"
@@ -6436,30 +6428,12 @@ jobs:
       - name: Download Kurdish font
         run: |
           mkdir -p app/src/main/assets
-          curl -fsSL -o app/src/main/assets/kfont.ttf "https://github.com/google/fonts/raw/main/ofl/notokufiarabic/NotoKufiArabic%5Bwght%5D.ttf" || echo "font download failed, using system font"
-
-      
-      - name: Inject Google client id
-        env:
-          CLIENT_ID: 603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com
-        run: |
-          if [ -z "$CLIENT_ID" ]; then echo "::warning::GOOGLE_CLIENT_ID variable is missing"; fi
-          sed -i "s|__CLIENT_ID__|${CLIENT_ID}|" app/src/main/java/com/kurdish/manhwareal/Secrets.kt
-
-         
-      
-
-      - name: Show SHA1
-        env:
-          KM_STORE_PASS: ${{ secrets.KM_STORE_PASS }}
-        run: |
-          PASS="${KM_STORE_PASS:-kmpass123}"
-          keytool -list -v -keystore app/km.keystore -alias km -storepass "$PASS" | grep -E "SHA1"
+          curl -fsSL -o app/src/main/assets/kfont.ttf "https://github.com/google/fonts/raw/main/ofl/notokufiarabic/NotoKufiArabic%5Bwght%5D.ttf" || echo "font download failed"
 
       - name: Apply fixes
         run: |
-          sed -i 's|const val GOOGLE_CLIENT_ID = ".*"|const val GOOGLE_CLIENT_ID = "603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com"|' app/src/main/java/com/kurdish/manhwareal/Secrets.kt
-          python3 - <<'ENDPY'
+          sed -i 's|__CLIENT_ID__|603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com|' app/src/main/java/com/kurdish/manhwareal/Secrets.kt
+          cat > /tmp/fix.py <<'ENDPY'
           import re
           p = "app/src/main/java/com/kurdish/manhwareal/Auth.kt"
           s = open(p, encoding="utf-8").read()
@@ -6482,8 +6456,9 @@ jobs:
           s, n = re.subn(pat, lambda m: new, s, count=1, flags=re.S)
           assert n == 1, "Auth.kt pattern not found"
           open(p, "w", encoding="utf-8").write(s)
-          ENDPY 
-      
+          ENDPY
+          python3 /tmp/fix.py
+
       - name: Build APK
         env:
           KM_STORE_PASS: ${{ secrets.KM_STORE_PASS }}
