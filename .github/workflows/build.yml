@@ -6459,7 +6459,7 @@ jobs:
       - name: Apply fixes
         run: |
           sed -i 's|const val GOOGLE_CLIENT_ID = ".*"|const val GOOGLE_CLIENT_ID = "603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com"|' app/src/main/java/com/kurdish/manhwareal/Secrets.kt
-          python3 - <<'PYEOF'
+          python3 - <<'ENDPY'
           import re
           p = "app/src/main/java/com/kurdish/manhwareal/Auth.kt"
           s = open(p, encoding="utf-8").read()
@@ -6482,7 +6482,7 @@ jobs:
           s, n = re.subn(pat, lambda m: new, s, count=1, flags=re.S)
           assert n == 1, "Auth.kt pattern not found"
           open(p, "w", encoding="utf-8").write(s)
-          PYEOF 
+          ENDPY 
       
       - name: Build APK
         env:
