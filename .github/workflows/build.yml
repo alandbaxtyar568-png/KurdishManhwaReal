@@ -6426,8 +6426,9 @@ jobs:
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > app/km.keystore
           elif [ -f app/km.keystore ]; then
-          echo "Using cached keystore"else
-            echo "::warning::KEYSTORE_B64 secret is missing, using a TEMPORARY key. Google sign-in will not work until you add it."
+            echo "Using cached keystore"
+          else
+           echo "::warning::KEYSTORE_B64 secret is missing, using a TEMPORARY key. Google sign-in will not work until you add it."
             keytool -genkeypair -keystore app/km.keystore -alias km -keyalg RSA -keysize 2048 -validity 10000 -storepass "$PASS" -keypass "$PASS" -dname "CN=KurdishManhwaTemp"
           fi
           keytool -list -v -keystore app/km.keystore -alias km -storepass "$PASS" | grep -E "SHA1|SHA256"
@@ -6446,11 +6447,7 @@ jobs:
           sed -i "s|__CLIENT_ID__|${CLIENT_ID}|" app/src/main/java/com/kurdish/manhwareal/Secrets.kt
 
          
-      - name: Keep same signing key
-        uses: actions/cache@v4
-        with:
-          path: app/km.keystore
-          key: km-keystore-v1
+      
 
       - name: Show SHA1
         env:
