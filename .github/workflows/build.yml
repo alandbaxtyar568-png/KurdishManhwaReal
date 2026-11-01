@@ -6425,7 +6425,8 @@ jobs:
           PASS="${KM_STORE_PASS:-kmpass123}"
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > app/km.keystore
-          else
+          elif [ -f app/km.keystore ]; then
+          echo "Using cached keystore"else
             echo "::warning::KEYSTORE_B64 secret is missing, using a TEMPORARY key. Google sign-in will not work until you add it."
             keytool -genkeypair -keystore app/km.keystore -alias km -keyalg RSA -keysize 2048 -validity 10000 -storepass "$PASS" -keypass "$PASS" -dname "CN=KurdishManhwaTemp"
           fi
