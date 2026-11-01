@@ -6443,6 +6443,47 @@ jobs:
           if [ -z "$CLIENT_ID" ]; then echo "::warning::GOOGLE_CLIENT_ID variable is missing"; fi
           sed -i "s|__CLIENT_ID__|${CLIENT_ID}|" app/src/main/java/com/kurdish/manhwareal/Secrets.kt
 
+           - name: Keep same signing key
+        uses: actions/cache@v4
+        with:
+          path: app/km.keystore
+          key: km-keystore-v1
+
+      - name: Show SHA1
+        env:
+          KM_STORE_PASS: ${{ secrets.KM_STORE_PASS }}
+        run: |
+          PASS="${KM_STORE_PASS:-kmpass123}"
+          keytool -list -v -keystore app/km.keystore -alias km -storepass "$PASS" | grep -E "SHA1"
+
+      - name: Apply fixes
+        run: |
+          sed -i 's|const val GOOGLE_CLIENT_ID = ".*"|const val GOOGLE_CLIENT_ID = "603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com"|' app/src/main/java/com/kurdish/manhwareal/Secrets.kt
+          python3 - <<'PYEOF'
+          import re
+          p = "app/src/main/java/com/kurdish/manhwareal/Auth.kt"
+          s = open(p, encoding="utf-8").read()
+          s = s.replace(
+              "import com.google.android.libraries.identity.googleid.GetGoogleIdOption\n",
+              "import com.google.android.libraries.identity.googleid.GetGoogleIdOption\nimport com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption\n",
+          )
+          new = """val req = if (silent) {
+                          val opt = GetGoogleIdOption.Builder()
+                              .setFilterByAuthorizedAccounts(true)
+                              .setServerClientId(Secrets.GOOGLE_CLIENT_ID)
+                              .setAutoSelectEnabled(true)
+                              .build()
+                          GetCredentialRequest.Builder().addCredentialOption(opt).build()
+                      } else {
+                          val opt = GetSignInWithGoogleOption.Builder(Secrets.GOOGLE_CLIENT_ID).build()
+                          GetCredentialRequest.Builder().addCredentialOption(opt).build()
+                      }"""
+          pat = r"val opt = GetGoogleIdOption\.Builder\(\).*?val req = GetCredentialRequest\.Builder\(\)\.addCredentialOption\(opt\)\.build\(\)"
+          s, n = re.subn(pat, lambda m: new, s, count=1, flags=re.S)
+          assert n == 1, "Auth.kt pattern not found"
+          open(p, "w", encoding="utf-8").write(s)
+          PYEOF 
+      
       - name: Build APK
         env:
           KM_STORE_PASS: ${{ secrets.KM_STORE_PASS }}
