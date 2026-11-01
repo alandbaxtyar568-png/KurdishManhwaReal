@@ -6436,6 +6436,7 @@ jobs:
           mkdir -p app/src/main/assets
           curl -fsSL -o app/src/main/assets/kfont.ttf "https://github.com/google/fonts/raw/main/ofl/notokufiarabic/NotoKufiArabic%5Bwght%5D.ttf" || echo "font download failed, using system font"
 
+      
       - name: Inject Google client id
         env:
           CLIENT_ID: 603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com
@@ -6443,7 +6444,8 @@ jobs:
           if [ -z "$CLIENT_ID" ]; then echo "::warning::GOOGLE_CLIENT_ID variable is missing"; fi
           sed -i "s|__CLIENT_ID__|${CLIENT_ID}|" app/src/main/java/com/kurdish/manhwareal/Secrets.kt
 
-           - name: Keep same signing key
+         
+      - name: Keep same signing key
         uses: actions/cache@v4
         with:
           path: app/km.keystore
