@@ -1,4 +1,4 @@
-name: Build Admin APK
+name: Build KMR APKs (admin + user)
 
 on:
   workflow_dispatch:
@@ -207,6 +207,9 @@ jobs:
 
               // Web client ID ی Google Cloud (لە workflow ەوە دادەنرێت، نهێنی نییە)
               const val GOOGLE_CLIENT_ID = "603610294387-l7bodk71diot2v63le8gpd7olfj811it.apps.googleusercontent.com"
+
+              // Worker ی لایسنس (٣ ڕۆژی تاقیکردنەوە + ماوەی دیاریکراو لەلایەن ئەدمینەوە)
+              const val LICENSE = "https://twilight-hat-7b7c.alandbaxtyar568.workers.dev"
           }
           KMEOF
           mkdir -p $(dirname app/src/main/java/com/kurdish/manhwareal/Data.kt)
@@ -4178,6 +4181,11 @@ jobs:
               @Volatile var name = ""
               @Volatile var admin = false
               @Volatile var exp = 0L
+              @Volatile var licToken = ""
+              @Volatile var licActive = false
+              @Volatile var licExpires = 0L
+              @Volatile var licSkew = 0L
+              @Volatile var licAdmin = false
               @Volatile private var actRef: WeakReference<Activity>? = null
               private var prefs: SharedPreferences? = null
               private val lock = Any()
@@ -4195,13 +4203,67 @@ jobs:
                       name = p.getString("n", "") ?: ""
                       admin = p.getBoolean("a", false)
                       exp = p.getLong("x", 0L)
+                      licToken = p.getString("lt", "") ?: ""
+                      licActive = p.getBoolean("la", false)
+                      licExpires = p.getLong("lx", 0L)
+                      licSkew = p.getLong("ls", 0L)
+                      licAdmin = p.getBoolean("lm", false)
                   }
               }
+
+              // ---------- لایسنس: ٣ ڕۆژی تاقیکردنەوە، پاشان ئەدمین ماوە زیاد دەکات ----------
+              private fun licNow(): Long = System.currentTimeMillis() + licSkew
+
+              fun licenseOk(): Boolean = licAdmin || (licActive && licNow() < licExpires)
+
+              fun daysLeft(): Int {
+                  val d = licExpires - licNow()
+                  return if (d <= 0L) 0 else ((d + 86399999L) / 86400000L).toInt()
+              }
+
+              private fun applyLicense(o: JSONObject) {
+                  val st = o.optJSONObject("status") ?: o
+                  licActive = st.optBoolean("active", false)
+                  licExpires = st.optLong("expiresAt", 0L)
+                  licAdmin = st.optBoolean("isAdmin", false)
+                  val srv = st.optLong("serverTime", 0L)
+                  licSkew = if (srv > 0L) srv - System.currentTimeMillis() else 0L
+                  val t = o.optString("token", "")
+                  if (t.isNotEmpty()) licToken = t
+                  prefs?.edit()?.putString("lt", licToken)?.putBoolean("la", licActive)?.putLong("lx", licExpires)
+                      ?.putLong("ls", licSkew)?.putBoolean("lm", licAdmin)?.apply()
+              }
+
+              private fun licHttp(method: String, path: String, body: String?, bearer: String?): String {
+                  val conn = java.net.URL(Secrets.LICENSE.trimEnd('/') + path).openConnection() as java.net.HttpURLConnection
+                  try {
+                      conn.requestMethod = method
+                      conn.connectTimeout = 8000
+                      conn.readTimeout = 15000
+                      conn.setRequestProperty("Content-Type", "application/json")
+                      if (bearer != null) conn.setRequestProperty("Authorization", "Bearer " + bearer)
+                      if (body != null) {
+                          conn.doOutput = true
+                          conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                      }
+                      val code = conn.responseCode
+                      val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                      val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                      if (code !in 200..299) throw Exception("HTTP " + code + ": " + text.take(160))
+                      return text
+                  } finally {
+                      conn.disconnect()
+                  }
+              }
+
+              fun licPost(path: String, body: String): String = licHttp("POST", path, body, licToken)
+
+              fun licGet(path: String): String = licHttp("GET", path, null, licToken)
 
               fun valid(): Boolean = token.isNotEmpty() && exp - nowSec() > 120
 
               /** ئایا ئەم ئەپە ڕێگەپێدراوە؟ (ئەپی ئەدمین تەنها بۆ ئەدمینە) */
-              fun allowed(): Boolean = valid() && (!BuildConfig.IS_ADMIN || admin)
+              fun allowed(): Boolean = valid() && (if (BuildConfig.IS_ADMIN) admin else licenseOk())
 
               fun expire() {
                   exp = 0L
@@ -4213,6 +4275,11 @@ jobs:
                   admin = false
                   email = ""
                   name = ""
+                  licToken = ""
+                  licActive = false
+                  licExpires = 0L
+                  licSkew = 0L
+                  licAdmin = false
                   prefs?.edit()?.clear()?.apply()
               }
 
@@ -4273,7 +4340,18 @@ jobs:
                           admin = o.optBoolean("admin", false)
                           prefs?.edit()?.putString("t", token)?.putString("e", email)?.putString("n", name)
                               ?.putBoolean("a", admin)?.putLong("x", exp)?.apply()
-                          main.post { cb(null) }
+                          var licErr = false
+                          try {
+                              val lr = licHttp("POST", "/auth", JSONObject().put("idToken", idToken).toString(), null)
+                              applyLicense(JSONObject(lr))
+                          } catch (e: Exception) {
+                              licErr = licToken.isEmpty()
+                          }
+                          if (licErr && !BuildConfig.IS_ADMIN) {
+                              main.post { cb("پەیوەندی بە سێرڤەری ماوە سەرنەکەوت، دووبارە هەوڵبدەرەوە") }
+                          } else {
+                              main.post { cb(null) }
+                          }
                       } catch (e: Exception) {
                           val m = e.message ?: ""
                           main.post { cb(if (m.contains("HTTP 403")) "ئەم ئەکاونتە بلۆک کراوە" else "پەیوەندی بە سێرڤەرەوە سەرنەکەوت") }
@@ -4350,9 +4428,16 @@ jobs:
                   status.setPadding(0, 0, 0, Ui.dp(act, 14))
 
                   lateinit var btn: TextView
+                  var expired = false
                   fun finish() {
                       if (Auth.allowed()) {
                           hide()
+                      } else if (Auth.valid() && !BuildConfig.IS_ADMIN && !Auth.licenseOk()) {
+                          // ماوەی بەکارهێنان تەواو بووە: ئەپەکە دادەخرێت تا ئەدمین ماوە زیاد بکات
+                          expired = true
+                          btn.text = "⟳ نوێکردنەوە"
+                          btn.visibility = View.VISIBLE
+                          status.text = "ماوەی بەکارهێنانت تەواو بووە. بۆ درێژکردنەوە پەیوەندی بە ئەدمین بکە، پاشان نوێکردنەوە بدە."
                       } else {
                           if (Auth.valid()) Auth.signOut()
                           btn.visibility = View.VISIBLE
@@ -4362,13 +4447,20 @@ jobs:
                   btn = Ui.button(act, "G   چوونەژوورەوە بە Google", true) {
                       btn.visibility = View.GONE
                       status.text = "..."
-                      Auth.signIn(act, false) { err ->
+                      val after: (String?) -> Unit = { err ->
                           if (err == null) {
                               finish()
                           } else {
                               btn.visibility = View.VISIBLE
                               status.text = err
                           }
+                      }
+                      if (expired) {
+                          Auth.signIn(act, true) { e1 ->
+                              if (e1 == null) finish() else Auth.signIn(act, false, after)
+                          }
+                      } else {
+                          Auth.signIn(act, false, after)
                       }
                   }
                   btn.visibility = View.GONE
@@ -4488,7 +4580,7 @@ jobs:
           import java.util.Date
           import java.util.Locale
 
-          /** پانێڵی ئەدمین: بەکارهێنەران ببینە، بلۆکیان بکە یان ڕێگەیان پێ بدە. سێرڤەر خۆی ئەدمینی ئیمەیڵ دەپشکنێت */
+          /** پانێڵی ئەدمین: بەکارهێنەران ببینە، ماوەیان زیاد بکە، بلۆکیان بکە یان ڕێگەیان پێ بدە. سێرڤەر خۆی ئەدمینی ئیمەیڵ دەپشکنێت */
           object AdminUi {
               private var added = false
 
@@ -4527,8 +4619,22 @@ jobs:
                   fun load() {
                       sum.text = "..."
                       Net.async(
-                          { JSONObject(Net.authedPost(Secrets.PROXY.trimEnd('/') + "/admin/users", "{}")) },
-                          { o ->
+                          {
+                              val o = JSONObject(Net.authedPost(Secrets.PROXY.trimEnd('/') + "/admin/users", "{}"))
+                              val lic = HashMap<String, JSONObject>()
+                              try {
+                                  val la = JSONObject(Auth.licGet("/admin/users")).getJSONArray("users")
+                                  for (j in 0 until la.length()) {
+                                      val x = la.getJSONObject(j)
+                                      lic[x.getString("email").lowercase()] = x
+                                  }
+                              } catch (e: Exception) {
+                              }
+                              Pair(o, lic)
+                          },
+                          { pr ->
+                              val o = pr.first
+                              val lic = pr.second
                               val users = o.getJSONArray("users")
                               var banned = 0
                               list.removeAllViews()
@@ -4538,6 +4644,7 @@ jobs:
                                   val isBanned = u.optBoolean("banned", false)
                                   if (isBanned) banned++
                                   val email = u.getString("email")
+                                  val li = lic[email.lowercase()]
                                   val row = LinearLayout(act)
                                   row.orientation = LinearLayout.VERTICAL
                                   row.background = Ui.round(act, Ui.SURFACE, 14)
@@ -4553,6 +4660,35 @@ jobs:
                                           12f, Ui.MUTED
                                       )
                                   )
+                                  val active = li != null && li.optBoolean("active", false)
+                                  val licTxt = if (li == null) "ماوە: هێشتا ٣ ڕۆژی تاقیکردنەوەی دەستپێنەکردووە"
+                                  else if (active) "ماوە: " + (li?.optInt("daysLeft", 0) ?: 0) + " ڕۆژ"
+                                  else "ماوە: تەواو بووە"
+                                  val lt = Ui.tv(act, licTxt, 13f, if (li == null || active) Ui.TEXT else Ui.HEART, true)
+                                  lt.setPadding(0, Ui.dp(act, 6), 0, Ui.dp(act, 6))
+                                  row.addView(lt)
+
+                                  val dr = LinearLayout(act)
+                                  dr.orientation = LinearLayout.HORIZONTAL
+                                  fun addBtn(label: String, path: String, body: JSONObject) {
+                                      val b2 = Ui.button(act, label, false) {
+                                          Net.async(
+                                              { Auth.licPost(path, body.toString()) },
+                                              { load() },
+                                              { e -> Toast.makeText(act, e, Toast.LENGTH_LONG).show() }
+                                          )
+                                      }
+                                      b2.setPadding(Ui.dp(act, 8), Ui.dp(act, 8), Ui.dp(act, 8), Ui.dp(act, 8))
+                                      val lp2 = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                                      lp2.marginEnd = Ui.dp(act, 6)
+                                      dr.addView(b2, lp2)
+                                  }
+                                  addBtn("+٧", "/admin/extend", JSONObject().put("email", email).put("days", 7))
+                                  addBtn("+٣٠", "/admin/extend", JSONObject().put("email", email).put("days", 30))
+                                  addBtn("+٩٠", "/admin/extend", JSONObject().put("email", email).put("days", 90))
+                                  addBtn("⏹ تەواو", "/admin/set", JSONObject().put("email", email).put("expiresAt", System.currentTimeMillis()))
+                                  row.addView(dr)
+
                                   val btn = Ui.button(act, if (isBanned) "✓ ڕێگەپێدان" else "⛔ بلۆککردن", !isBanned) {
                                       Net.async(
                                           {
@@ -4593,6 +4729,17 @@ jobs:
                   dlg.show()
                   load()
               }
+          }
+          KMEOF
+          mkdir -p app/src/user/java/com/kurdish/manhwareal
+          cat > app/src/user/java/com/kurdish/manhwareal/AdminUi.kt <<'KMEOF'
+          package com.kurdish.manhwareal
+
+          import android.app.Activity
+
+          /** ئەپی user پانێڵی ئەدمینی نییە */
+          object AdminUi {
+              fun attach(act: Activity) {}
           }
           KMEOF
           mkdir -p $(dirname app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp)
@@ -6573,9 +6720,14 @@ jobs:
       - name: Build APK
         env:
           KM_STORE_PASS: ${{ secrets.KM_STORE_PASS }}
-        run: gradle assembleAdminDebug --no-daemon
+        run: gradle assembleAdminDebug assembleUserDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
           name: KMR-admin-apk
           path: app/build/outputs/apk/admin/debug/app-admin-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KMR-user-apk
+          path: app/build/outputs/apk/user/debug/app-user-debug.apk
