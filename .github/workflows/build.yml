@@ -314,7 +314,7 @@ jobs:
                   set(v) { p().edit().putString("gemini_key", v.trim()).apply() }
 
               var model: String
-                  get() = p().getString("gemini_model", "gemini-flash-latest") ?: "gemini-flash-latest"
+                  get() { val m = p().getString("gemini_model", "") ?: ""; return if (m.isBlank() || m.contains("2.5") || m.contains("2.0") || m.contains("1.5")) "gemini-flash-latest" else m }
                   set(v) { p().edit().putString("gemini_model", v.trim().ifEmpty { "gemini-flash-latest" }).apply() }
 
               fun saved(): MutableList<Manhwa> {
@@ -970,6 +970,13 @@ jobs:
               private lateinit var savedEmpty: TextView
               private lateinit var startBtn: TextView
               private lateinit var translateStatus: TextView
+              private lateinit var daysTv: TextView
+              private val daysTick = object : Runnable {
+                  override fun run() {
+                      refreshDays()
+                      Net.ui.postDelayed(this, 30000L)
+                  }
+              }
 
               private val modeChips = ArrayList<TextView>()
               private val genreChips = HashMap<String, TextView>()
@@ -1062,6 +1069,7 @@ jobs:
                   }
 
                   selectTab(0)
+                  Net.ui.post(daysTick)
                   styleModeChips()
                   reload()
               }
@@ -1070,6 +1078,8 @@ jobs:
                   super.onResume()
                   Auth.init(this)
                   LoginGate.attach(this)
+                  refreshDays()
+                  Auth.refreshLicense { refreshDays(); LoginGate.attach(this) }
                   refreshTranslateUi()
               }
 
@@ -1154,6 +1164,8 @@ jobs:
                   titles.orientation = LinearLayout.VERTICAL
                   titles.addView(Ui.tv(this, "دۆزینەوەی مانهوا", 20f, Ui.TEXT, true))
                   titles.addView(Ui.tv(this, "AI ـی خۆت بۆ باشترین مانهواکان", 12f, Ui.MUTED))
+                  daysTv = Ui.tv(this, "", 12f, Ui.ACCENT2, true)
+                  titles.addView(daysTv)
                   val tlp = LinearLayout.LayoutParams(0, WRAP, 1f)
                   tlp.marginStart = dp(10)
                   header.addView(titles, tlp)
@@ -1496,6 +1508,7 @@ jobs:
 
               override fun onDestroy() {
                   super.onDestroy()
+                  Net.ui.removeCallbacks(daysTick)
                   webTab.destroy()
               }
 
@@ -1577,10 +1590,25 @@ jobs:
                   dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.94).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
               }
 
+              private fun daysText(): String =
+                  if (BuildConfig.IS_ADMIN || Auth.licAdmin) "👑 ئەدمین · بێ سنوور"
+                  else if (!Auth.licenseOk()) "⏳ ماوەکەت تەواو بووە"
+                  else "⏳ ماوە: " + Auth.daysLeft() + " ڕۆژ"
+
+              private fun accountText(): String {
+                  if (Auth.email.isEmpty()) return "چوونەژوورەوە نەکراوە"
+                  return Auth.email + "\n\n" + daysText()
+              }
+
+              private fun refreshDays() {
+                  if (!::daysTv.isInitialized) return
+                  daysTv.text = if (Auth.token.isEmpty()) "" else daysText()
+              }
+
               private fun showAccount() {
                   AlertDialog.Builder(this)
                       .setTitle("ئەکاونت")
-                      .setMessage(if (Auth.email.isEmpty()) "چوونەژوورەوە نەکراوە" else Auth.email)
+                      .setMessage(accountText())
                       .setPositiveButton("داخستن", null)
                       .setNegativeButton("چوونەدەرەوە") { _, _ ->
                           Auth.signOut()
@@ -2861,8 +2889,12 @@ jobs:
                       for ((k, ci) in chunk.withIndex()) {
                           if (k < fin.size && fin[k].isNotBlank()) chApply(gen, ci, fin[k], true)
                       }
-                  } else if (!Ensemble.anyAlive()) {
-                      android.widget.Toast.makeText(act, "Worker ـەکە /llm ـی نییە، تەنها Gemini بەکار هات", android.widget.Toast.LENGTH_LONG).show()
+                  } else if (!Ensemble.anyAlive() && chPolish) {
+                      // Worker ـەکە /llm ی نییە: چەند زیرەکی خۆکارانە دەکوژێتەوە و تەنها Gemini بەکاردێت
+                      chPolish = false
+                      act.getSharedPreferences("km_ui", Context.MODE_PRIVATE).edit().putBoolean("polish", false).apply()
+                      styleP()
+                      android.widget.Toast.makeText(act, "چەند زیرەکی بەردەست نییە و کوژایەوە. تەنها Gemini بەکاردێت.", android.widget.Toast.LENGTH_LONG).show()
                   }
                   chProgress()
                   chSync()
@@ -4104,10 +4136,7 @@ jobs:
                               cb(null)
                               return@execute
                           }
-                          if (cands.size == 1) {
-                              cb(cands[0])
-                              return@execute
-                          }
+
                           val arr = JSONArray()
                           for (i in 0 until n) {
                               val o = JSONObject().put("en", texts[i])
@@ -4259,6 +4288,19 @@ jobs:
               fun licPost(path: String, body: String): String = licHttp("POST", path, body, licToken)
 
               fun licGet(path: String): String = licHttp("GET", path, null, licToken)
+
+              /** ماوەی ڕۆژەکان لە سێرڤەر نوێ دەکاتەوە (ئەگەر ئەدمین زیادی کردبێت) */
+              fun refreshLicense(cb: () -> Unit) {
+                  if (licToken.isEmpty()) return
+                  Thread {
+                      try {
+                          val r = try { licGet("/status") } catch (e: Exception) { licPost("/status", "{}") }
+                          applyLicense(JSONObject(r))
+                          main.post { cb() }
+                      } catch (e: Exception) {
+                      }
+                  }.start()
+              }
 
               fun valid(): Boolean = token.isNotEmpty() && exp - nowSec() > 120
 
