@@ -6723,7 +6723,8 @@ jobs:
           +KUhfrmIGWN71vOYzvSWrFahAAWNgcc1ZpZQizpsj2qtwyzadYGbMcjPcSsWIbQUlFHImAABKwM1
           TAtNCVzxAAAAAAAA
           KMEOF
-
+      - name: Patch app (double OCR pass + quota texts)
+        run: python3 patch.py
       - name: Restore signing key
         id: ks
         uses: actions/cache/restore@v4
