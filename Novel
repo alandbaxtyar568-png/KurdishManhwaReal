@@ -1,0 +1,586 @@
+name: Build Kurdish Novel Real APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.9'
+
+      - name: Create project files
+        run: |
+          mkdir -p $(dirname settings.gradle)
+          cat > settings.gradle <<'KNEOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "KurdishNovelReal"
+          include ':app'
+          KNEOF
+          mkdir -p $(dirname build.gradle)
+          cat > build.gradle <<'KNEOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+          }
+          KNEOF
+          mkdir -p $(dirname gradle.properties)
+          cat > gradle.properties <<'KNEOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          KNEOF
+          mkdir -p $(dirname app/build.gradle)
+          cat > app/build.gradle <<'KNEOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.kurdish.novelreal'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId "com.kurdish.novelreal"
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          KNEOF
+          mkdir -p $(dirname app/src/main/AndroidManifest.xml)
+          cat > app/src/main/AndroidManifest.xml <<'KNEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:label="Kurdish Novel Real"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          KNEOF
+          mkdir -p $(dirname app/src/main/java/com/kurdish/novelreal/MainActivity.kt)
+          cat > app/src/main/java/com/kurdish/novelreal/MainActivity.kt <<'KNEOF'
+          package com.kurdish.novelreal
+
+          import android.annotation.SuppressLint
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
+          import android.text.InputType
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.inputmethod.EditorInfo
+          import android.view.inputmethod.InputMethodManager
+          import android.webkit.CookieManager
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.EditText
+          import android.widget.HorizontalScrollView
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.activity.OnBackPressedCallback
+          import androidx.appcompat.app.AlertDialog
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.view.ViewCompat
+          import androidx.core.view.WindowInsetsCompat
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import org.json.JSONTokener
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.util.concurrent.Callable
+          import java.util.concurrent.Executors
+
+          /** وەرگێڕان: Gemini (ئەگەر کلیلت دانابێت) یان Google وەک پشتیوان */
+          object Tr {
+              val pool = Executors.newFixedThreadPool(3)
+              val gpool = Executors.newFixedThreadPool(6)
+
+              private fun fix(s: String): String =
+                  s.replace('ي', 'ی').replace('ى', 'ی').replace('ك', 'ک')
+                      .replace('ة', 'ە').replace('ؤ', 'ۆ').replace('ھ', 'ه').trim()
+
+              private fun googleChunk(text: String): String {
+                  val u = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ckb&dt=t&q=" +
+                      URLEncoder.encode(text, "UTF-8")
+                  val c = URL(u).openConnection() as HttpURLConnection
+                  c.connectTimeout = 6000
+                  c.readTimeout = 10000
+                  c.setRequestProperty("User-Agent", "Mozilla/5.0")
+                  try {
+                      val r = c.inputStream.bufferedReader().use { it.readText() }
+                      val sub = JSONArray(r).getJSONArray(0)
+                      val sb = StringBuilder()
+                      for (i in 0 until sub.length()) sb.append(sub.getJSONArray(i).optString(0, ""))
+                      return fix(sb.toString())
+                  } finally {
+                      c.disconnect()
+                  }
+              }
+
+              fun google(text: String): String {
+                  val parts = ArrayList<String>()
+                  var cur = StringBuilder()
+                  for (s in text.split(Regex("(?<=[.!?])\\s+"))) {
+                      if (cur.isNotEmpty() && cur.length + s.length > 450) {
+                          parts.add(cur.toString())
+                          cur = StringBuilder()
+                      }
+                      cur.append(s).append(' ')
+                  }
+                  if (cur.isNotBlank()) parts.add(cur.toString())
+                  return parts.joinToString(" ") { googleChunk(it) }
+              }
+
+              fun gemini(key: String, model: String, texts: List<String>): List<String>? {
+                  return try {
+                      val arr = JSONArray()
+                      for (t in texts) arr.put(t)
+                      val prompt = "You are a professional literary translator from English to Kurdish Sorani (Central Kurdish, Arabic script). " +
+                          "You translate web novels (dark fantasy, LitRPG, cultivation). Below is a JSON array of consecutive paragraphs " +
+                          "from ONE chapter, in order. Translate like a published Kurdish novel: literary, flowing narration, natural spoken " +
+                          "dialogue, keep the mood, tension and emotion. Never translate word by word. Use Kurdish letters (ە ێ ۆ ڕ ڵ ک ی). " +
+                          "Transliterate character names, places and skill names into Arabic script and keep them identical in every paragraph. " +
+                          "Keep short system/status messages short. Return ONLY a JSON array of exactly " + texts.size +
+                          " strings, same order, no commentary.\n" + arr.toString()
+                      val body = JSONObject()
+                          .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                          .put("generationConfig", JSONObject().put("temperature", 0.6).put("responseMimeType", "application/json"))
+                      val c = URL("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + key)
+                          .openConnection() as HttpURLConnection
+                      c.requestMethod = "POST"
+                      c.doOutput = true
+                      c.connectTimeout = 8000
+                      c.readTimeout = 60000
+                      c.setRequestProperty("Content-Type", "application/json")
+                      c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                      if (c.responseCode !in 200..299) return null
+                      val resp = c.inputStream.bufferedReader().use { it.readText() }
+                      val text = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
+                          .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                      val st = text.indexOf('[')
+                      val en = text.lastIndexOf(']')
+                      if (st < 0 || en <= st) return null
+                      val out = JSONArray(text.substring(st, en + 1))
+                      if (out.length() != texts.size) return null
+                      List(out.length()) { fix(out.optString(it, "")) }
+                  } catch (e: Exception) {
+                      null
+                  }
+              }
+          }
+
+          private const val JS_INIT = """
+          (function(){
+           window.__kmFs=window.__kmFs||0; window.__kmOrig=window.__kmOrig||false; window.__kmN=window.__kmN||0;
+           window.__kmSet=function(a){a.forEach(function(o){
+            var e=document.querySelector('[data-km="'+o.i+'"]'); if(!e)return;
+            if(!e.getAttribute('data-km-o'))e.setAttribute('data-km-o',e.innerText);
+            e.setAttribute('data-km-t',o.t);
+            if(!window.__kmOrig){e.innerText=o.t;e.style.direction='rtl';e.style.textAlign='right';}
+            if(window.__kmFs)e.style.fontSize=window.__kmFs+'px';
+            e.style.lineHeight='1.9';});};
+           window.__kmView=function(orig){window.__kmOrig=orig;
+            document.querySelectorAll('[data-km-o]').forEach(function(e){
+             e.innerText=orig?e.getAttribute('data-km-o'):e.getAttribute('data-km-t');
+             e.style.direction=orig?'':'rtl';e.style.textAlign=orig?'':'right';});};
+           window.__kmFont=function(px){window.__kmFs=px;
+            document.querySelectorAll('[data-km]').forEach(function(e){e.style.fontSize=px+'px';e.style.lineHeight='1.9';});};
+          })();
+          """
+
+          private const val JS_COLLECT = """
+          (function(){
+           var out=[],n=window.__kmN||0;
+           document.querySelectorAll('p,h1,h2,h3,h4,li,blockquote').forEach(function(e){
+            if(e.getAttribute('data-km')!==null)return;
+            if(e.closest('nav,header,footer,aside,button,form,select,script,style'))return;
+            if(e.offsetParent===null)return;
+            if(e.querySelector('p,li,h1,h2,h3,h4'))return;
+            var t=(e.innerText||'').trim(); if(t.length<2)return;
+            var L=(t.match(/[A-Za-z]/g)||[]).length; if(L<2||L/t.length<0.4)return;
+            e.setAttribute('data-km',n); out.push({i:n,t:t}); n++;});
+           window.__kmN=n; return JSON.stringify(out);
+          })()
+          """
+
+          class MainActivity : AppCompatActivity() {
+              private lateinit var web: WebView
+              private lateinit var urlEt: EditText
+              private lateinit var trBtn: TextView
+              private lateinit var viewBtn: TextView
+              private lateinit var stat: TextView
+              private val prefs by lazy { getSharedPreferences("nov", MODE_PRIVATE) }
+              private val ui = Handler(Looper.getMainLooper())
+              private val tick = Runnable { translateNew() }
+              private var auto = false
+              private var busy = false
+              private var showOrig = false
+              private var fs = 0
+
+              private val BG = 0xFF0B0F1A.toInt()
+              private val SURF = 0xFF1C2540.toInt()
+              private val ACC = 0xFF7C5CFF.toInt()
+              private val TXT = 0xFFE8ECF8.toInt()
+              private val ACC2 = 0xFF22D3EE.toInt()
+
+              private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+              private fun rr(c: Int, r: Int): GradientDrawable {
+                  val g = GradientDrawable()
+                  g.setColor(c)
+                  g.cornerRadius = dp(r).toFloat()
+                  return g
+              }
+
+              private fun btn(t: String, on: () -> Unit): TextView {
+                  val b = TextView(this)
+                  b.text = t
+                  b.setTextColor(TXT)
+                  b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                  b.typeface = Typeface.DEFAULT_BOLD
+                  b.gravity = Gravity.CENTER
+                  b.setPadding(dp(12), dp(8), dp(12), dp(8))
+                  b.background = rr(SURF, 14)
+                  b.setOnClickListener { on() }
+                  return b
+              }
+
+              private fun lp(): LinearLayout.LayoutParams {
+                  val l = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                  l.marginEnd = dp(6)
+                  return l
+              }
+
+              @SuppressLint("SetJavaScriptEnabled")
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  fs = prefs.getInt("fs", 0)
+                  window.statusBarColor = BG
+                  window.navigationBarColor = BG
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+                  root.setBackgroundColor(BG)
+                  root.layoutDirection = View.LAYOUT_DIRECTION_LTR
+
+                  // ناونیشان
+                  val top = LinearLayout(this)
+                  top.orientation = LinearLayout.HORIZONTAL
+                  top.gravity = Gravity.CENTER_VERTICAL
+                  top.setPadding(dp(8), dp(8), dp(8), dp(4))
+                  top.addView(btn("←") { if (web.canGoBack()) web.goBack() }, lp())
+                  urlEt = EditText(this)
+                  urlEt.hint = "URL / search..."
+                  urlEt.setHintTextColor(0xFF8A94B2.toInt())
+                  urlEt.setTextColor(TXT)
+                  urlEt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                  urlEt.isSingleLine = true
+                  urlEt.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                  urlEt.imeOptions = EditorInfo.IME_ACTION_GO
+                  urlEt.background = rr(SURF, 14)
+                  urlEt.setPadding(dp(12), dp(8), dp(12), dp(8))
+                  urlEt.setOnEditorActionListener { _, a, _ ->
+                      if (a == EditorInfo.IME_ACTION_GO) {
+                          open(urlEt.text.toString())
+                          true
+                      } else false
+                  }
+                  top.addView(urlEt, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).also { it.marginEnd = dp(6) })
+                  top.addView(btn("→") { open(urlEt.text.toString()) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                  root.addView(top)
+
+                  // ماڵپەڕە یاساییەکان
+                  val sites = listOf(
+                      "📖 Shadow Slave" to "https://www.webnovel.com/book/shadow-slave_22196879505300905",
+                      "Webnovel" to "https://www.webnovel.com",
+                      "Royal Road" to "https://www.royalroad.com",
+                      "Scribble Hub" to "https://www.scribblehub.com",
+                      "Wattpad" to "https://www.wattpad.com",
+                      "AO3" to "https://archiveofourown.org",
+                      "Wuxiaworld" to "https://www.wuxiaworld.com",
+                      "Tapas" to "https://tapas.io/novels",
+                      "Standard Ebooks" to "https://standardebooks.org",
+                      "Gutenberg" to "https://www.gutenberg.org"
+                  )
+                  val sc1 = HorizontalScrollView(this)
+                  sc1.isHorizontalScrollBarEnabled = false
+                  val r1 = LinearLayout(this)
+                  r1.setPadding(dp(8), dp(2), dp(8), dp(4))
+                  for (s in sites) r1.addView(btn(s.first) { open(s.second) }, lp())
+                  sc1.addView(r1)
+                  root.addView(sc1)
+
+                  // کۆنترۆڵەکانی وەرگێڕان
+                  val sc2 = HorizontalScrollView(this)
+                  sc2.isHorizontalScrollBarEnabled = false
+                  val r2 = LinearLayout(this)
+                  r2.setPadding(dp(8), dp(2), dp(8), dp(6))
+                  trBtn = btn("") { toggleAuto() }
+                  viewBtn = btn("") { toggleView() }
+                  r2.addView(trBtn, lp())
+                  r2.addView(viewBtn, lp())
+                  r2.addView(btn("A−") { changeFont(-2) }, lp())
+                  r2.addView(btn("A+") { changeFont(2) }, lp())
+                  r2.addView(btn("⚙ Gemini") { keyDialog() }, lp())
+                  sc2.addView(r2)
+                  root.addView(sc2)
+                  styleBtns()
+
+                  stat = TextView(this)
+                  stat.setTextColor(ACC2)
+                  stat.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                  stat.setPadding(dp(14), 0, dp(14), dp(2))
+                  root.addView(stat)
+
+                  web = WebView(this)
+                  val st = web.settings
+                  st.javaScriptEnabled = true
+                  st.domStorageEnabled = true
+                  CookieManager.getInstance().setAcceptCookie(true)
+                  CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
+                  web.setBackgroundColor(0xFF000000.toInt())
+                  web.webViewClient = object : WebViewClient() {
+                      override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                          if (url != null) urlEt.setText(url)
+                          ui.removeCallbacks(tick)
+                      }
+
+                      override fun onPageFinished(view: WebView?, url: String?) {
+                          showOrig = false
+                          styleBtns()
+                          if (auto) ui.postDelayed(tick, 1800)
+                      }
+
+                      override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                          val sch = request?.url?.scheme ?: return false
+                          return sch != "http" && sch != "https"
+                      }
+                  }
+                  // ناوەڕۆکی نوێ کە بە سکڕۆڵ دێت (lazy load) خۆکارانە وەردەگێڕدرێت
+                  web.setOnScrollChangeListener { _, _, _, _, _ ->
+                      if (auto) {
+                          ui.removeCallbacks(tick)
+                          ui.postDelayed(tick, 1200)
+                      }
+                  }
+                  root.addView(web, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+                  setContentView(root)
+
+                  ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+                      val b = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+                      v.setPadding(b.left, b.top, b.right, b.bottom)
+                      WindowInsetsCompat.CONSUMED
+                  }
+                  onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                      override fun handleOnBackPressed() {
+                          if (web.canGoBack()) web.goBack() else {
+                              isEnabled = false
+                              onBackPressedDispatcher.onBackPressed()
+                          }
+                      }
+                  })
+
+                  open(prefs.getString("last", sites[0].second) ?: sites[0].second)
+              }
+
+              override fun onPause() {
+                  super.onPause()
+                  web.url?.let { prefs.edit().putString("last", it).apply() }
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  ui.removeCallbacksAndMessages(null)
+                  web.destroy()
+              }
+
+              private fun normalize(s: String): String {
+                  val t = s.trim()
+                  if (t.startsWith("http://") || t.startsWith("https://")) return t
+                  if (!t.contains(' ') && t.contains('.')) return "https://" + t
+                  return "https://www.google.com/search?q=" + URLEncoder.encode(t, "UTF-8")
+              }
+
+              private fun open(s: String) {
+                  if (s.isBlank()) return
+                  val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                  imm.hideSoftInputFromWindow(urlEt.windowToken, 0)
+                  web.loadUrl(normalize(s))
+              }
+
+              private fun styleBtns() {
+                  trBtn.text = if (auto) "◉ وەرگێڕان: چالاکە" else "○ وەرگێڕان بە کوردی"
+                  trBtn.background = if (auto) rr(ACC, 14) else rr(SURF, 14)
+                  viewBtn.text = if (showOrig) "EN → کوردی" else "کوردی → EN"
+              }
+
+              private fun toggleAuto() {
+                  auto = !auto
+                  styleBtns()
+                  if (auto) translateNew() else {
+                      ui.removeCallbacks(tick)
+                      stat.text = ""
+                  }
+              }
+
+              private fun toggleView() {
+                  showOrig = !showOrig
+                  web.evaluateJavascript(JS_INIT, null)
+                  web.evaluateJavascript("window.__kmView(" + showOrig + ");", null)
+                  styleBtns()
+              }
+
+              private fun changeFont(d: Int) {
+                  fs = if (fs == 0) 18 + d else (fs + d).coerceIn(12, 40)
+                  prefs.edit().putInt("fs", fs).apply()
+                  web.evaluateJavascript(JS_INIT, null)
+                  web.evaluateJavascript("window.__kmFont(" + fs + ");", null)
+              }
+
+              private fun keyDialog() {
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.setPadding(dp(20), dp(12), dp(20), dp(4))
+                  val k = EditText(this)
+                  k.hint = "Gemini API key (AIza...)"
+                  k.isSingleLine = true
+                  k.setText(prefs.getString("gk", ""))
+                  val m = EditText(this)
+                  m.hint = "gemini-flash-latest"
+                  m.isSingleLine = true
+                  m.setText(prefs.getString("gm", "gemini-flash-latest"))
+                  col.addView(k)
+                  col.addView(m)
+                  AlertDialog.Builder(this)
+                      .setTitle("Gemini (بەبێ کلیل Google وەردەگێڕێت)")
+                      .setView(col)
+                      .setPositiveButton("پاشەکەوت") { _, _ ->
+                          prefs.edit().putString("gk", k.text.toString().trim())
+                              .putString("gm", m.text.toString().trim().ifEmpty { "gemini-flash-latest" }).apply()
+                      }
+                      .setNegativeButton("داخستن", null)
+                      .show()
+              }
+
+              private fun translateNew() {
+                  if (busy) {
+                      ui.postDelayed(tick, 800)
+                      return
+                  }
+                  busy = true
+                  web.evaluateJavascript(JS_INIT, null)
+                  web.evaluateJavascript("window.__kmFs=" + fs + ";", null)
+                  web.evaluateJavascript(JS_COLLECT) { raw ->
+                      val items = ArrayList<Pair<Int, String>>()
+                      try {
+                          val a = JSONArray(JSONTokener(raw).nextValue() as String)
+                          for (i in 0 until a.length()) {
+                              val o = a.getJSONObject(i)
+                              items.add(Pair(o.getInt("i"), o.getString("t")))
+                          }
+                      } catch (e: Exception) {
+                      }
+                      if (items.isEmpty()) {
+                          busy = false
+                      } else {
+                          runBatches(items)
+                      }
+                  }
+              }
+
+              private fun runBatches(items: List<Pair<Int, String>>) {
+                  val key = prefs.getString("gk", "") ?: ""
+                  val model = prefs.getString("gm", "gemini-flash-latest") ?: "gemini-flash-latest"
+                  val batches = items.chunked(12)
+                  var left = batches.size
+                  stat.text = "⏳ 0/" + batches.size
+                  for (b in batches) {
+                      Tr.pool.execute {
+                          val texts = b.map { it.second }
+                          var res: List<String>? = null
+                          if (key.isNotBlank()) res = Tr.gemini(key, model, texts)
+                          if (res == null) {
+                              val fut = texts.map { t -> Tr.gpool.submit(Callable<String> { try { Tr.google(t) } catch (e: Exception) { "" } }) }
+                              res = fut.map { try { it.get() } catch (e: Exception) { "" } }
+                          }
+                          val fin: List<String> = res
+                          val arr = JSONArray()
+                          for ((i, p) in b.withIndex()) {
+                              if (fin[i].isNotBlank()) arr.put(JSONObject().put("i", p.first).put("t", fin[i]))
+                          }
+                          ui.post {
+                              web.evaluateJavascript("window.__kmSet(" + arr.toString() + ");", null)
+                              left--
+                              stat.text = if (left <= 0) "✓" else "⏳ " + (batches.size - left) + "/" + batches.size
+                              if (left <= 0) busy = false
+                          }
+                      }
+                  }
+              }
+          }
+          KNEOF
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KurdishNovelReal-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
